@@ -1,6 +1,14 @@
 const { SidecarDetectionsStream } = require('../../../server/processes/SidecarDetectionsStream');
 
 describe('SidecarDetectionsStream', () => {
+  beforeEach(() => {
+    jasmine.clock().install();
+  });
+
+  afterEach(() => {
+    jasmine.clock().uninstall();
+  });
+
   it('parses event block with explicit event type', () => {
     const parsed = SidecarDetectionsStream.parseEventBlock(
       'event: detections\ndata: {"frame_id":1,"objects":[]}',
@@ -60,5 +68,36 @@ describe('SidecarDetectionsStream', () => {
 
     expect(onDetection).toHaveBeenCalledTimes(1);
     expect(onDetection.calls.mostRecent().args[0].data.frame_id).toBe(3);
+  });
+
+  it('schedules reconnect when enabled', () => {
+    const stream = new SidecarDetectionsStream({
+      shouldReconnect: true,
+      reconnectDelayMs: 50,
+    });
+    stream.manuallyStopped = false;
+    spyOn(stream, 'connect');
+
+    stream.scheduleReconnect();
+    jasmine.clock().tick(49);
+    expect(stream.connect).not.toHaveBeenCalled();
+
+    jasmine.clock().tick(1);
+    expect(stream.connect).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reconnect after stop', () => {
+    const stream = new SidecarDetectionsStream({
+      shouldReconnect: true,
+      reconnectDelayMs: 50,
+    });
+    stream.manuallyStopped = false;
+    spyOn(stream, 'connect');
+
+    stream.scheduleReconnect();
+    stream.stop();
+    jasmine.clock().tick(100);
+
+    expect(stream.connect).not.toHaveBeenCalled();
   });
 });

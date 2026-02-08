@@ -303,12 +303,18 @@ app.prepare()
           });
         }).catch((error) => {
           console.error(error);
+          if (useSidecarDetectionsForV2) {
+            console.warn('Falling back to legacy detections runtime after sidecar start failure');
+            startRuntimeSession(urlData);
+            stopSidecarDetectionsStream();
+          }
+
           const details = error && error.response && error.response.data
             ? error.response.data
             : { message: error.message };
           res.status(202).json({
             status: 'starting_with_sidecar_warning',
-            detectionsSource: useSidecarDetectionsForV2 ? 'sidecar' : 'legacy',
+            detectionsSource: useSidecarDetectionsForV2 ? 'legacy_fallback' : 'legacy',
             sidecar: {
               baseURL: inferenceSidecarBaseURL,
               details,

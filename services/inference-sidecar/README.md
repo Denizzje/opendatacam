@@ -11,7 +11,7 @@ Implemented endpoints:
 - `POST /api/v1/runtime/session/start`
 - `POST /api/v1/runtime/session/stop`
 - `GET /api/v1/runtime/session/status`
-- `GET /api/v1/stream/detections` (scaffold SSE event payload)
+- `GET /api/v1/stream/detections` (continuous SSE payload stream)
 
 Not implemented yet:
 
@@ -32,3 +32,8 @@ cmake --build services/inference-sidecar/build -j
 - `DARKNET_REF` (default: `master`)
 - `DARKNET_COMMIT` (optional)
 - `DARKHELP_COMMIT` (optional)
+- `DETECTIONS_STREAM_INTERVAL_MS` (default: `200`)
+- `SIDECAR_DEFAULT_VIDEO_WIDTH` (default: `1280`)
+- `SIDECAR_DEFAULT_VIDEO_HEIGHT` (default: `720`)
+- `SIDECAR_EMIT_DEMO_DETECTIONS` (default: `false`)
+- `SIDECAR_RESET_FRAME_COUNTER_ON_START` (default: `true`)

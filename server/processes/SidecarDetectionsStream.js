@@ -10,11 +10,18 @@ class SidecarDetectionsStream {
     this.onError = config.onError || (() => {});
     this.onOpen = config.onOpen || (() => {});
     this.onClose = config.onClose || (() => {});
+    this.shouldReconnect = config.shouldReconnect !== undefined ? config.shouldReconnect : true;
+    this.reconnectDelayMs = Number.isInteger(config.reconnectDelayMs)
+      ? config.reconnectDelayMs
+      : 1000;
 
     this.request = null;
     this.response = null;
     this.buffer = '';
     this.isRunning = false;
+    this.isConnecting = false;
+    this.manuallyStopped = true;
+    this.reconnectTimer = null;
   }
 
   static parseEventBlock(eventBlock) {
@@ -72,11 +79,61 @@ class SidecarDetectionsStream {
     }
   }
 
-  start() {
-    if (this.isRunning) {
+  clearReconnectTimer() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+
+  scheduleReconnect() {
+    if (this.manuallyStopped || !this.shouldReconnect || this.reconnectTimer) {
       return;
     }
 
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, this.reconnectDelayMs);
+  }
+
+  cleanupConnection({ destroy = false } = {}) {
+    if (destroy && this.request) {
+      this.request.destroy();
+    }
+
+    if (destroy && this.response) {
+      this.response.destroy();
+    }
+
+    this.request = null;
+    this.response = null;
+    this.buffer = '';
+    this.isRunning = false;
+    this.isConnecting = false;
+  }
+
+  handleConnectionClosed(error = null) {
+    const wasActive = this.isRunning || this.isConnecting;
+    this.cleanupConnection();
+
+    if (error) {
+      this.onError(error);
+    }
+
+    if (wasActive) {
+      this.onClose();
+    }
+
+    this.scheduleReconnect();
+  }
+
+  connect() {
+    if (this.manuallyStopped || this.isRunning || this.isConnecting) {
+      return;
+    }
+
+    this.isConnecting = true;
     const url = new URL(this.path, this.baseURL);
     const httpModule = url.protocol === 'https:' ? https : http;
 
@@ -94,46 +151,46 @@ class SidecarDetectionsStream {
       this.buffer = '';
 
       if (res.statusCode >= 400) {
-        this.onError(new Error(`Sidecar detections stream returned HTTP ${res.statusCode}`));
-        this.stop();
+        this.handleConnectionClosed(
+          new Error(`Sidecar detections stream returned HTTP ${res.statusCode}`),
+        );
         return;
       }
 
+      this.isConnecting = false;
       this.isRunning = true;
       this.onOpen();
       res.setEncoding('utf8');
       res.on('data', (chunk) => this.handleChunk(chunk));
-      res.on('error', (error) => this.onError(error));
-      res.on('close', () => {
-        this.isRunning = false;
-        this.onClose();
-      });
-      res.on('end', () => {
-        this.isRunning = false;
-        this.onClose();
-      });
+      res.on('error', (error) => this.handleConnectionClosed(error));
+      res.on('close', () => this.handleConnectionClosed());
+      res.on('end', () => this.handleConnectionClosed());
     });
 
     this.request.on('error', (error) => {
-      this.isRunning = false;
-      this.onError(error);
+      this.handleConnectionClosed(error);
     });
     this.request.end();
   }
 
+  start() {
+    if (this.isRunning || this.isConnecting) {
+      return;
+    }
+
+    this.manuallyStopped = false;
+    this.connect();
+  }
+
   stop() {
-    if (this.request) {
-      this.request.destroy();
-      this.request = null;
-    }
+    this.manuallyStopped = true;
+    this.clearReconnectTimer();
+    const wasActive = this.isRunning || this.isConnecting;
+    this.cleanupConnection({ destroy: true });
 
-    if (this.response) {
-      this.response.destroy();
-      this.response = null;
+    if (wasActive) {
+      this.onClose();
     }
-
-    this.buffer = '';
-    this.isRunning = false;
   }
 }
 
