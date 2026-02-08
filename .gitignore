@@ -14,3 +14,4 @@ public/static/trackerHistoryExport.json
 *.weights
 .env
 .build
+services/inference-sidecar/build

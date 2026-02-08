@@ -102,6 +102,16 @@ In order to solve use cases that aren't taken care by our opendatacam base app, 
 
 See [Development notes](https://opendata.cam/docs/development/)
 
+## Modernization Work (WIP)
+
+The `development` branch now contains the first modernization scaffolding:
+
+- Initial `/api/v2` runtime endpoints in `server.js`
+- Sidecar scaffold in `services/inference-sidecar/`
+- Draft v4 config schema and migration helper
+
+See `docs/migration-v3-to-v4.md` for current v4 config notes.
+
 ## 💰️ Funded by the community
 
 - `@rantgithub` funded work to add Polygon counters and to improve the counting lines

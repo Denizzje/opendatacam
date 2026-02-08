@@ -139,19 +139,36 @@ app.prepare()
     const server = http.createServer(express);
     express.use(bodyParser.json());
 
-    // TODO add compression: https://github.com/expressjs/compression
+    const getRuntimeStreamURLData = (req) => {
+      if (req) {
+        return getURLData(req);
+      }
 
-    // This render pages/index.js for a request to /
-    express.get('/', (req, res) => {
-      YOLO.start(); // Inside yolo process will check is started
-
-      const urlData = {
+      return {
         hostname: 'localhost',
         port: configHelper.getJsonStreamPort(),
         path: '/',
         method: 'GET',
       };
+    };
+
+    const startRuntimeSession = (urlData) => {
+      YOLO.start(); // Inside yolo process will check is started
       Opendatacam.listenToYOLO(YOLO, urlData);
+    };
+
+    const stopRuntimeSession = () => {
+      Opendatacam.stopRecording();
+      Opendatacam.clean();
+      return YOLO.stop();
+    };
+
+    // TODO add compression: https://github.com/expressjs/compression
+
+    // This render pages/index.js for a request to /
+    express.get('/', (req, res) => {
+      const urlData = getRuntimeStreamURLData();
+      startRuntimeSession(urlData);
 
       return app.render(req, res, '/');
     });
@@ -170,10 +187,38 @@ app.prepare()
      *
      */
     express.get('/start', (req, res) => {
-      YOLO.start(); // Inside yolo process will check is started
-      const urlData = getURLData(req);
-      Opendatacam.listenToYOLO(YOLO, urlData);
+      const urlData = getRuntimeStreamURLData(req);
+      startRuntimeSession(urlData);
       res.sendStatus(200);
+    });
+
+    express.post('/api/v2/runtime/session/start', (req, res) => {
+      const urlData = getRuntimeStreamURLData(req);
+      startRuntimeSession(urlData);
+      res.status(202).json({
+        status: 'starting',
+      });
+    });
+
+    express.post('/api/v2/runtime/session/stop', (req, res) => {
+      stopRuntimeSession().then(() => {
+        res.status(200).json({
+          status: 'stopped',
+        });
+      }).catch((error) => {
+        console.error(error);
+        res.status(500).json({
+          status: 'error',
+          message: 'Failed to stop runtime session',
+        });
+      });
+    });
+
+    express.get('/api/v2/runtime/status', (req, res) => {
+      res.json({
+        status: 'ok',
+        runtime: Opendatacam.getStatus(),
+      });
     });
 
     let mjpgProxy = null;
@@ -198,6 +243,13 @@ app.prepare()
       return mjpgProxy.proxyRequest(req, res);
     });
 
+    express.get('/api/v2/stream/mjpeg', (req, res) => {
+      if (mjpgProxy == null) {
+        mjpgProxy = new MjpegProxy(`http://localhost:${config.PORTS.darknet_mjpeg_stream}`);
+      }
+      return mjpgProxy.proxyRequest(req, res);
+    });
+
     /**
      * @api {get} /webcam/resolution Resolution
      * @apiName Resolution
@@ -212,6 +264,10 @@ app.prepare()
      *     }
      */
     express.get('/webcam/resolution', (req, res) => {
+      res.json(YOLO.videoResolution);
+    });
+
+    express.get('/api/v2/webcam/resolution', (req, res) => {
       res.json(YOLO.videoResolution);
     });
 
@@ -340,6 +396,11 @@ app.prepare()
       res.sendStatus(200);
     });
 
+    express.post('/api/v2/counting/areas', (req, res) => {
+      Opendatacam.registerCountingAreas(req.body.countingAreas);
+      res.sendStatus(200);
+    });
+
     /**
      * @api {get} /counter/areas Get areas
      * @apiName Get counter areas
@@ -439,6 +500,10 @@ app.prepare()
       res.json(Opendatacam.getCountingAreas());
     });
 
+    express.get('/api/v2/counting/areas', (req, res) => {
+      res.json(Opendatacam.getCountingAreas());
+    });
+
     // Maybe Remove the need for dependency with direct express implem:
     // https://github.com/expressjs/compression#server-sent-events
     /**
@@ -526,6 +591,10 @@ app.prepare()
      *
      */
     express.get('/tracker/sse', sse, (req, res) => {
+      Opendatacam.addStreamClient(res);
+    });
+
+    express.get('/api/v2/stream/events', sse, (req, res) => {
       Opendatacam.addStreamClient(res);
     });
 
@@ -969,6 +1038,10 @@ app.prepare()
       }
      */
     express.get('/status', (req, res) => {
+      res.json(Opendatacam.getStatus());
+    });
+
+    express.get('/api/v2/status', (req, res) => {
       res.json(Opendatacam.getStatus());
     });
 

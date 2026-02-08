@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opendatacam.local/schema/config.v4.json",
+  "title": "OpenDataCam Config v4",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "app",
+    "inference",
+    "video",
+    "tracking",
+    "counting",
+    "storage",
+    "ports"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 4
+    },
+    "app": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["opendatacam_version", "valid_classes", "display_classes"],
+      "properties": {
+        "opendatacam_version": { "type": "string", "minLength": 1 },
+        "valid_classes": { "type": "array", "items": { "type": "string" } },
+        "display_classes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["class", "hexcode"],
+            "properties": {
+              "class": { "type": "string" },
+              "hexcode": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "inference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend",
+        "darknet_repo",
+        "darknet_ref",
+        "darknet_commit",
+        "darkhelp_commit"
+      ],
+      "properties": {
+        "backend": { "type": "string", "enum": ["darkhelp"] },
+        "darknet_repo": { "type": "string", "minLength": 1 },
+        "darknet_ref": { "type": "string", "minLength": 1 },
+        "darknet_commit": { "type": "string" },
+        "darkhelp_commit": { "type": "string" },
+        "sidecar": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["base_url"],
+          "properties": {
+            "base_url": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "video": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input", "inputs", "upload_folder"],
+      "properties": {
+        "input": { "type": "string" },
+        "upload_folder": { "type": "string", "minLength": 1 },
+        "inputs": { "type": "object" }
+      }
+    },
+    "tracking": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["settings"],
+      "properties": {
+        "settings": { "type": "object" }
+      }
+    },
+    "counting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["settings"],
+      "properties": {
+        "settings": { "type": "object" }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["database", "database_params"],
+      "properties": {
+        "database": { "type": "string" },
+        "database_params": { "type": "object" }
+      }
+    },
+    "ports": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["app", "inference_json_stream", "inference_mjpeg_stream"],
+      "properties": {
+        "app": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "inference_json_stream": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "inference_mjpeg_stream": { "type": "integer", "minimum": 1, "maximum": 65535 }
+      }
+    },
+    "ui": {
+      "type": "object"
+    }
+  }
+}
