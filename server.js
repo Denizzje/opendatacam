@@ -28,6 +28,8 @@ const GpsTracker = require('./server/tracker/GpsTracker');
 const packageJson = require('./package.json');
 const { YoloDarknet } = require('./server/processes/YoloDarknet');
 const { InferenceSidecarClient } = require('./server/processes/InferenceSidecarClient');
+const { SidecarDetectionsStream } = require('./server/processes/SidecarDetectionsStream');
+const { normalizeSidecarFrame } = require('./server/processes/SidecarDetectionsAdapter');
 const { MongoDbManager } = require('./server/db/MongoDbManager');
 
 const config = loadConfig();
@@ -194,6 +196,57 @@ app.prepare()
 
     const sidecarMjpegStreamURL = `${inferenceSidecarBaseURL}/api/v1/stream/mjpeg`;
     const useLegacyMjpegForV2 = process.env.OPENDATACAM_V2_MJPEG_FALLBACK_LEGACY !== 'false';
+    const useSidecarDetectionsForV2 = process.env.OPENDATACAM_V2_USE_SIDECAR_DETECTIONS === 'true';
+    const sidecarDetectionsPath = '/api/v1/stream/detections';
+    let sidecarDetectionsStream = null;
+    let sidecarFallbackFrameId = 0;
+
+    const stopSidecarDetectionsStream = () => {
+      if (sidecarDetectionsStream) {
+        sidecarDetectionsStream.stop();
+        sidecarDetectionsStream = null;
+      }
+    };
+
+    const startSidecarDetectionsStream = () => {
+      stopSidecarDetectionsStream();
+      sidecarFallbackFrameId = 0;
+
+      sidecarDetectionsStream = new SidecarDetectionsStream({
+        baseURL: inferenceSidecarBaseURL,
+        path: sidecarDetectionsPath,
+        onOpen: () => {
+          console.log(`Connected to sidecar detections stream at ${inferenceSidecarBaseURL}`);
+        },
+        onClose: () => {
+          console.log('Sidecar detections stream closed');
+        },
+        onError: (error) => {
+          console.error('Sidecar detections stream error');
+          console.error(error);
+        },
+        onDetection: (eventPayload) => {
+          if (!eventPayload
+            || (eventPayload.event !== 'detections' && eventPayload.event !== 'message')) {
+            return;
+          }
+
+          const normalized = normalizeSidecarFrame(eventPayload.data, sidecarFallbackFrameId);
+          if (!normalized) {
+            return;
+          }
+
+          if (normalized.videoResolution) {
+            Opendatacam.setVideoResolution(normalized.videoResolution);
+          }
+
+          sidecarFallbackFrameId = normalized.frameId + 1;
+          Opendatacam.updateWithNewFrame(normalized.objects, normalized.frameId);
+        },
+      });
+
+      sidecarDetectionsStream.start();
+    };
 
     // TODO add compression: https://github.com/expressjs/compression
 
@@ -227,29 +280,46 @@ app.prepare()
     express.post('/api/v2/runtime/session/start', (req, res) => {
       const payload = req.body || {};
       const urlData = getRuntimeStreamURLData(req);
-      startRuntimeSession(urlData);
 
-      inferenceSidecar.startSession(payload).then((sidecarResponse) => {
-        res.status(202).json({
-          status: 'starting',
-          sidecar: sidecarResponse,
+      const prepareRuntime = useSidecarDetectionsForV2
+        ? stopRuntimeSession().catch((error) => {
+          console.error('Failed to stop legacy runtime before sidecar mode');
+          console.error(error);
+        })
+        : Promise.resolve().then(() => {
+          startRuntimeSession(urlData);
         });
-      }).catch((error) => {
-        console.error(error);
-        const details = error && error.response && error.response.data
-          ? error.response.data
-          : { message: error.message };
-        res.status(202).json({
-          status: 'starting_with_sidecar_warning',
-          sidecar: {
-            baseURL: inferenceSidecarBaseURL,
-            details,
-          },
+
+      prepareRuntime.then(() => {
+        inferenceSidecar.startSession(payload).then((sidecarResponse) => {
+          if (useSidecarDetectionsForV2) {
+            startSidecarDetectionsStream();
+          }
+
+          res.status(202).json({
+            status: 'starting',
+            detectionsSource: useSidecarDetectionsForV2 ? 'sidecar' : 'legacy',
+            sidecar: sidecarResponse,
+          });
+        }).catch((error) => {
+          console.error(error);
+          const details = error && error.response && error.response.data
+            ? error.response.data
+            : { message: error.message };
+          res.status(202).json({
+            status: 'starting_with_sidecar_warning',
+            detectionsSource: useSidecarDetectionsForV2 ? 'sidecar' : 'legacy',
+            sidecar: {
+              baseURL: inferenceSidecarBaseURL,
+              details,
+            },
+          });
         });
       });
     });
 
     express.post('/api/v2/runtime/session/stop', (req, res) => {
+      stopSidecarDetectionsStream();
       Promise.allSettled([
         inferenceSidecar.stopSession(),
         stopRuntimeSession(),
@@ -292,6 +362,11 @@ app.prepare()
         res.json({
           status: 'ok',
           runtime: Opendatacam.getStatus(),
+          detectionsSource: useSidecarDetectionsForV2 ? 'sidecar' : 'legacy',
+          detectionsStream: {
+            enabled: useSidecarDetectionsForV2,
+            running: sidecarDetectionsStream ? sidecarDetectionsStream.isRunning : false,
+          },
           sidecar: {
             baseURL: inferenceSidecarBaseURL,
             session: sidecarSession,
@@ -374,7 +449,8 @@ app.prepare()
     });
 
     express.get('/api/v2/webcam/resolution', (req, res) => {
-      res.json(YOLO.videoResolution);
+      const currentResolution = Opendatacam.getStatus().videoResolution || YOLO.videoResolution;
+      res.json(currentResolution);
     });
 
     let consoleRes = null;

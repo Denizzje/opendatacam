@@ -108,6 +108,7 @@ The `development` branch now contains the first modernization scaffolding:
 
 - Initial `/api/v2` runtime endpoints in `server.js`
 - `/api/v2/runtime/*` now integrates with `INFERENCE_SIDECAR_URL` (default: `http://localhost:9080`)
+- Set `OPENDATACAM_V2_USE_SIDECAR_DETECTIONS=true` to use sidecar detections as runtime source for `/api/v2/runtime/session/*`
 - `/api/v2/stream/mjpeg` defaults to legacy stream for compatibility. Set `OPENDATACAM_V2_MJPEG_FALLBACK_LEGACY=false` to force sidecar MJPEG (`/api/v1/stream/mjpeg`)
 - Sidecar scaffold in `services/inference-sidecar/`
 - Draft v4 config schema and migration helper
