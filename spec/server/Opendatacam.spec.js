@@ -180,5 +180,43 @@ describe('Opendatacam', () => {
         });
       }).not.toThrow();
     });
+
+    it('resets stale counter summary when replacing counting areas', () => {
+      Opendatacam.registerCountingAreas({
+        oldArea: {
+          color: 'yellow',
+          type: 'bidirectional',
+          location: {
+            points: [
+              { x: 100, y: 100 },
+              { x: 200, y: 100 },
+            ],
+            refResolution: { w: 1280, h: 720 },
+          },
+          name: 'oldArea',
+        },
+      });
+
+      Opendatacam.registerCountingAreas({
+        newArea: {
+          color: 'yellow',
+          type: 'bidirectional',
+          location: {
+            points: [
+              { x: 100, y: 100 },
+              { x: 200, y: 100 },
+            ],
+            refResolution: { w: 1280, h: 720 },
+          },
+          name: 'newArea',
+        },
+      });
+
+      expect(Opendatacam.getCounterSummary()).toEqual({
+        newArea: {
+          _total: 0,
+        },
+      });
+    });
   });
 });

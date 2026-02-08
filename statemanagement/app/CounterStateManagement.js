@@ -98,8 +98,11 @@ export function selectCountingArea(id) {
 export function registerCountingAreasOnServer() {
   return (dispatch, getState) => {
     // Ping webservice to start storing data on server
-    axios.post('/api/v2/counting/areas', {
+    return axios.post('/api/v2/counting/areas', {
       countingAreas: getState().counter.get('countingAreas').toJS(),
+    }).catch((error) => {
+      console.error('Failed to register counting areas on server');
+      console.error(error);
     });
   };
 }

@@ -687,15 +687,29 @@ app.prepare()
      * @apiSuccessExample Success-Response:
      *   HTTP/1.1 200 OK
      */
-    express.post('/counter/areas', (req, res) => {
-      Opendatacam.registerCountingAreas(req.body.countingAreas);
-      res.sendStatus(200);
-    });
+    const handleRegisterCountingAreas = (req, res) => {
+      const countingAreas = req && req.body ? req.body.countingAreas : null;
+      if (countingAreas === null || typeof countingAreas !== 'object') {
+        return res.status(400).json({
+          error: 'countingAreas payload must be an object',
+        });
+      }
 
-    express.post('/api/v2/counting/areas', (req, res) => {
-      Opendatacam.registerCountingAreas(req.body.countingAreas);
-      res.sendStatus(200);
-    });
+      try {
+        Opendatacam.registerCountingAreas(countingAreas);
+        return res.sendStatus(200);
+      } catch (error) {
+        console.error('Failed to register counting areas');
+        console.error(error && error.message ? error.message : error);
+        return res.status(500).json({
+          error: 'Failed to register counting areas',
+        });
+      }
+    };
+
+    express.post('/counter/areas', handleRegisterCountingAreas);
+
+    express.post('/api/v2/counting/areas', handleRegisterCountingAreas);
 
     /**
      * @api {get} /counter/areas Get areas
