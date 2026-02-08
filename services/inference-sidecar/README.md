@@ -38,6 +38,12 @@ Implemented endpoints:
 
 If a key is omitted, the sidecar falls back to environment defaults.
 
+## Model weight references
+
+- MSCOCO pretrained weights index: `https://codeberg.org/CCodeRun/darknet#mscoco-pre-trained-weights`
+- `yolov4-tiny` reference discussion: `https://github.com/hank-ai/darknet/issues/21#issuecomment-1807480542`
+- `yolov4-tiny.weights` direct download: `https://github.com/hank-ai/darknet/releases/download/v2.0/yolov4-tiny.weights`
+
 ## Build locally
 
 ```bash
