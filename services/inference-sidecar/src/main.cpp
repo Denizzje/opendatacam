@@ -65,9 +65,16 @@ class RuntimeState {
     return response;
   }
 
+  long long nextFrameId() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    frameId_ += 1;
+    return frameId_;
+  }
+
  private:
   mutable std::mutex mutex_;
   bool sessionStarted_ = false;
+  long long frameId_ = 0;
   json sessionPayload_ = json::object();
   std::chrono::steady_clock::time_point startTime_ = std::chrono::steady_clock::now();
 };
@@ -146,12 +153,15 @@ int main() {
   });
 
   server.Get("/api/v1/stream/detections", [&](const httplib::Request &, httplib::Response & res) {
-    json body = {
-      {"status", "not_implemented"},
-      {"message", "Detection stream endpoint not implemented yet."}
+    json detection = {
+      {"frame_id", state.nextFrameId()},
+      {"timestamp_ms", static_cast<long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count())},
+      {"objects", json::array()},
+      {"source", "inference-sidecar-scaffold"}
     };
-    res.status = 501;
-    res.set_content(body.dump(), "application/json");
+    const std::string payload = "event: detections\ndata: " + detection.dump() + "\n\n";
+    res.set_content(payload, "text/event-stream");
   });
 
   server.Get("/api/v1/stream/mjpeg", [&](const httplib::Request &, httplib::Response & res) {

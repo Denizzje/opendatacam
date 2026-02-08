@@ -50,4 +50,11 @@ describe('InferenceSidecarClient', () => {
     await client.getSessionStatus();
     expect(fakeHttp.get).toHaveBeenCalledWith('/api/v1/runtime/session/status');
   });
+
+  it('gets detections stream', async () => {
+    await client.getDetectionsStream();
+    expect(fakeHttp.get).toHaveBeenCalledWith('/api/v1/stream/detections', {
+      responseType: 'stream',
+    });
+  });
 });

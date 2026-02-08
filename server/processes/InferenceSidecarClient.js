@@ -39,6 +39,12 @@ class InferenceSidecarClient {
     const response = await this.http.get('/api/v1/runtime/session/status');
     return response.data;
   }
+
+  async getDetectionsStream() {
+    return this.http.get('/api/v1/stream/detections', {
+      responseType: 'stream',
+    });
+  }
 }
 
 module.exports = { InferenceSidecarClient };

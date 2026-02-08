@@ -11,10 +11,10 @@ Implemented endpoints:
 - `POST /api/v1/runtime/session/start`
 - `POST /api/v1/runtime/session/stop`
 - `GET /api/v1/runtime/session/status`
+- `GET /api/v1/stream/detections` (scaffold SSE event payload)
 
 Not implemented yet:
 
-- `GET /api/v1/stream/detections`
 - `GET /api/v1/stream/mjpeg`
 
 ## Build locally

@@ -193,7 +193,7 @@ app.prepare()
     };
 
     const sidecarMjpegStreamURL = `${inferenceSidecarBaseURL}/api/v1/stream/mjpeg`;
-    const useLegacyMjpegForV2 = process.env.OPENDATACAM_V2_MJPEG_FALLBACK_LEGACY === 'true';
+    const useLegacyMjpegForV2 = process.env.OPENDATACAM_V2_MJPEG_FALLBACK_LEGACY !== 'false';
 
     // TODO add compression: https://github.com/expressjs/compression
 
@@ -682,6 +682,17 @@ app.prepare()
 
     express.get('/api/v2/stream/events', sse, (req, res) => {
       Opendatacam.addStreamClient(res);
+    });
+
+    express.get('/api/v2/stream/detections', (req, res) => {
+      inferenceSidecar.getDetectionsStream().then((sidecarResponse) => {
+        const contentType = sidecarResponse.headers['content-type'] || 'application/octet-stream';
+        res.status(sidecarResponse.status);
+        res.setHeader('Content-Type', contentType);
+        sidecarResponse.data.pipe(res);
+      }).catch((error) => {
+        sendSidecarRuntimeError(res, error, 'Failed to proxy sidecar detections stream');
+      });
     });
 
     /**
