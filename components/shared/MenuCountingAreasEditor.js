@@ -84,7 +84,7 @@ class MenuCountingAreasEditor extends Component {
               />
             </button>
             <a
-              href="/counter/areas"
+              href="/api/v2/counting/areas"
               target="_blank"
               download
               className="btn btn-default p-0 ml-4 rounded-l shadow"

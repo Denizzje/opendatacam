@@ -98,7 +98,7 @@ export function selectCountingArea(id) {
 export function registerCountingAreasOnServer() {
   return (dispatch, getState) => {
     // Ping webservice to start storing data on server
-    axios.post('/counter/areas', {
+    axios.post('/api/v2/counting/areas', {
       countingAreas: getState().counter.get('countingAreas').toJS(),
     });
   };
@@ -259,7 +259,7 @@ export function restoreCountingAreas(req) {
     if (req) {
       const urlData = getURLData(req);
       const session = req && req.session ? req.session : null;
-      const url = `${urlData.protocol}://${urlData.address}:${urlData.port}/counter/areas`;
+      const url = `${urlData.protocol}://${urlData.address}:${urlData.port}/api/v2/counting/areas`;
 
       axios({
         method: 'get',
@@ -282,7 +282,7 @@ export function restoreCountingAreas(req) {
     } else {
       axios({
         method: 'get',
-        url: '/counter/areas',
+        url: '/api/v2/counting/areas',
       }).then((response) => {
         dispatch({
           type: RESTORE_COUNTING_AREAS,

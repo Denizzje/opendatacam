@@ -59,7 +59,7 @@ export function setMode(mode) {
 export function startRecording() {
   return (dispatch, getState) => {
     // Ping webservice to start storing data on server
-    axios.get('/recording/start');
+    axios.post('/api/v2/recordings/start');
 
     dispatch(fetchHistory());
 
@@ -75,7 +75,7 @@ export function startRecording() {
 export function stopRecording() {
   return (dispatch) => {
     // Ping webservice to stop storing data on server
-    axios.get('/recording/stop');
+    axios.post('/api/v2/recordings/stop');
     dispatch(fetchHistory());
   };
 }
@@ -84,7 +84,7 @@ export function loadConfig(req) {
   return (dispatch) => new Promise((resolve, reject) => {
     const urlData = getURLData(req);
     const session = req && req.session ? req.session : null;
-    const url = `${urlData.protocol}://${urlData.address}:${urlData.port}/config`;
+    const url = `${urlData.protocol}://${urlData.address}:${urlData.port}/api/v2/config`;
 
     axios({
       method: 'get',
@@ -111,7 +111,7 @@ export function restoreUiSettings(req) {
   return (dispatch) => new Promise((resolve, reject) => {
     const urlData = getURLData(req);
     const session = req && req.session ? req.session : null;
-    const url = `${urlData.protocol}://${urlData.address}:${urlData.port}/ui`;
+    const url = `${urlData.protocol}://${urlData.address}:${urlData.port}/api/v2/ui`;
 
     axios({
       method: 'get',
@@ -190,7 +190,7 @@ export function setUiSetting(uiSetting, value) {
     });
 
     // Persist ui settings on server
-    axios.post('/ui', getState().app.get('uiSettings').toJS());
+    axios.post('/api/v2/ui', getState().app.get('uiSettings').toJS());
   };
 }
 
@@ -203,7 +203,7 @@ export function setURLData(req) {
 
 export function startListeningToServerData() {
   return (dispatch) => {
-    const eventSource = new EventSource('/tracker/sse');
+    const eventSource = new EventSource('/api/v2/stream/events');
     dispatch({
       type: START_LISTENING_SERVERDATA,
       payload: eventSource,

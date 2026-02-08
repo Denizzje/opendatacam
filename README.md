@@ -102,6 +102,39 @@ In order to solve use cases that aren't taken care by our opendatacam base app, 
 
 See [Development notes](https://opendata.cam/docs/development/)
 
+## LegoGears API demo (local)
+
+Run a complete sidecar-first API demo against local `LegoGears_v2` assets:
+
+```bash
+npm run demo:legogears:api
+```
+
+The command will:
+
+- start inference-sidecar (build it first if needed)
+- start OpenDataCam in sidecar detections mode
+- start `/api/v2/runtime/session/start` with LegoGears model + video payload
+- print `/api/v2/runtime/status`, sample detections, and MJPEG headers
+
+Keep services running after the demo:
+
+```bash
+npm run demo:legogears:api -- --keep-running
+```
+
+Smoke-test sidecar startup + streams against a running server:
+
+```bash
+npm run smoke:sidecar
+```
+
+If your sidecar runtime needs explicit model/video overrides, pass a JSON payload file:
+
+```bash
+START_PAYLOAD_FILE=/tmp/sidecar-start.json npm run smoke:sidecar
+```
+
 ## Modernization Work (WIP)
 
 The `development` branch now contains the first modernization scaffolding:
@@ -109,11 +142,14 @@ The `development` branch now contains the first modernization scaffolding:
 - Initial `/api/v2` runtime endpoints in `server.js`
 - `/api/v2/runtime/*` now integrates with `INFERENCE_SIDECAR_URL` (default: `http://localhost:9080`)
 - Set `OPENDATACAM_V2_USE_SIDECAR_DETECTIONS=true` to use sidecar detections as runtime source for `/api/v2/runtime/session/*`
+- In sidecar mode, `/` now auto-starts sidecar runtime session (not legacy YOLO). Disable this with `OPENDATACAM_V2_AUTO_START_ON_ROOT=false`
+- Frontend controls and streams now use `/api/v2/*` routes (recordings, counting areas, UI settings, SSE, MJPEG, uploads)
 - In sidecar detections mode, startup falls back to legacy runtime if sidecar session start fails
 - `/api/v2/stream/mjpeg` defaults to legacy stream for compatibility. Set `OPENDATACAM_V2_MJPEG_FALLBACK_LEGACY=false` to force sidecar MJPEG (`/api/v1/stream/mjpeg`)
 - Sidecar runtime in `services/inference-sidecar/` now supports DarkHelp live inference with replay fallback for detections + MJPEG streams
 - `/api/v2/runtime/session/start` now forwards `inference.sidecar.runtime` defaults from config v4 to sidecar session payload
 - `docker/run/*/docker-compose.v4.yml` now runs sidecar-first (`OPENDATACAM_V2_USE_SIDECAR_DETECTIONS=true`) and mounts `./models` + `./videos` into sidecar runtime paths
+- Added local demo + smoke scripts: `npm run demo:legogears:api` and `npm run smoke:sidecar`
 - Draft v4 config schema and migration helper
 - Runtime config bridge supports v4 via `OPENDATACAM_CONFIG_PATH=/path/to/config.v4.json`
 

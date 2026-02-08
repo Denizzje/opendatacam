@@ -49,7 +49,7 @@ export function fetchHistory(offset = DEFAULT_OFFSET, limit = DEFAULT_LIMIT) {
       type: FETCH_HISTORY_START,
     });
 
-    axios.get(`/recordings?offset=${offset}&limit=${limit}`).then((response) => {
+    axios.get(`/api/v2/recordings?offset=${offset}&limit=${limit}`).then((response) => {
       dispatch(fetchHistorySuccess(response.data.recordings));
       dispatch(updateRecordingsCursor({
         total: response.data.total,
@@ -68,7 +68,7 @@ export function deleteRecording(recordingId) {
       type: DELETE_RECORDING,
       payload: recordingId,
     });
-    axios.delete(`/recording/${recordingId}`);
+    axios.delete(`/api/v2/recordings/${recordingId}`);
   };
 }
 

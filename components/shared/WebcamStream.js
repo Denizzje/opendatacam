@@ -20,7 +20,7 @@ class WebcamStream extends PureComponent {
   constructor(props) {
     super(props);
     this.state = {
-      url: '/webcam/stream',
+      url: '/api/v2/stream/mjpeg',
     };
   }
 

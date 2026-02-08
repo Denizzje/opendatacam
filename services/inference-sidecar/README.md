@@ -46,6 +46,32 @@ cmake --build services/inference-sidecar/build -j
 ./services/inference-sidecar/build/inference-sidecar
 ```
 
+## End-to-end demo with OpenDataCam
+
+From repo root, run:
+
+```bash
+npm run demo:legogears:api
+```
+
+This launches OpenDataCam in sidecar mode, starts a session with `LegoGears_v2` model/video, and prints API outputs from:
+
+- `/api/v2/runtime/status`
+- `/api/v2/stream/detections`
+- `/api/v2/stream/mjpeg`
+
+Smoke-test a running sidecar-mode setup:
+
+```bash
+npm run smoke:sidecar
+```
+
+If your runtime requires explicit sidecar start payload, set:
+
+```bash
+START_PAYLOAD_FILE=/tmp/sidecar-start.json npm run smoke:sidecar
+```
+
 ## Runtime environment variables
 
 - `SIDECAR_PORT` (default: `9080`)

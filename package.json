@@ -13,7 +13,9 @@
     "start": "NODE_ENV=production scripts/npm/startServer.sh",
     "generateapidoc": "scripts/npm/generateapidoc.sh",
     "test": "scripts/npm/test.sh",
-    "migrate:config:v4": "node scripts/migrate-config-v3-to-v4.js"
+    "migrate:config:v4": "node scripts/migrate-config-v3-to-v4.js",
+    "demo:legogears:api": "scripts/demo/legogears-api-demo.sh",
+    "smoke:sidecar": "scripts/smoke/sidecar-mode-startup-stream.sh"
   },
   "dependencies": {
     "axios": "^0.21.1",

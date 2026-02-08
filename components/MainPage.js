@@ -46,7 +46,7 @@ class MainPage extends React.PureComponent {
     });
     const formData = new FormData();
     formData.append('video', event.dataTransfer.files[0]);
-    axios.post('/files', formData, {
+    axios.post('/api/v2/files', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },

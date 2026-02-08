@@ -198,6 +198,7 @@ app.prepare()
     const sidecarMjpegStreamURL = `${inferenceSidecarBaseURL}/api/v1/stream/mjpeg`;
     const useLegacyMjpegForV2 = process.env.OPENDATACAM_V2_MJPEG_FALLBACK_LEGACY !== 'false';
     const useSidecarDetectionsForV2 = process.env.OPENDATACAM_V2_USE_SIDECAR_DETECTIONS === 'true';
+    const autoStartV2RuntimeOnRoot = process.env.OPENDATACAM_V2_AUTO_START_ON_ROOT !== 'false';
     const sidecarDetectionsPath = '/api/v1/stream/detections';
     let sidecarDetectionsStream = null;
     let sidecarFallbackFrameId = 0;
@@ -249,12 +250,56 @@ app.prepare()
       sidecarDetectionsStream.start();
     };
 
+    const ensureSidecarDetectionsStream = () => {
+      if (!useSidecarDetectionsForV2) {
+        return;
+      }
+
+      const isStreamAlreadyActive = sidecarDetectionsStream
+        && (sidecarDetectionsStream.isRunning || sidecarDetectionsStream.isConnecting);
+      if (isStreamAlreadyActive) {
+        return;
+      }
+
+      startSidecarDetectionsStream();
+    };
+
+    const ensureSidecarRuntimeSession = () => {
+      const sidecarSessionPayload = buildSidecarSessionPayload(config, {});
+      return inferenceSidecar.getSessionStatus().then((statusResponse) => {
+        const sessionStatus = statusResponse && statusResponse.session
+          ? statusResponse.session
+          : statusResponse;
+        const sessionStarted = sessionStatus && sessionStatus.session_started === true;
+        if (sessionStarted) {
+          ensureSidecarDetectionsStream();
+          return;
+        }
+
+        inferenceSidecar.startSession(sidecarSessionPayload).then(() => {
+          ensureSidecarDetectionsStream();
+        }).catch((error) => {
+          console.error('Failed to auto-start sidecar runtime session');
+          console.error(error);
+        });
+      }).catch((error) => {
+        console.error('Failed to read sidecar runtime status');
+        console.error(error);
+      });
+    };
+
     // TODO add compression: https://github.com/expressjs/compression
 
     // This render pages/index.js for a request to /
     express.get('/', (req, res) => {
-      const urlData = getRuntimeStreamURLData();
-      startRuntimeSession(urlData);
+      if (useSidecarDetectionsForV2) {
+        if (autoStartV2RuntimeOnRoot) {
+          ensureSidecarRuntimeSession();
+        }
+      } else {
+        const urlData = getRuntimeStreamURLData();
+        startRuntimeSession(urlData);
+      }
 
       return app.render(req, res, '/');
     });
