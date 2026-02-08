@@ -226,13 +226,26 @@ app.prepare()
 
     express.post('/api/v2/runtime/session/start', (req, res) => {
       const payload = req.body || {};
+      const urlData = getRuntimeStreamURLData(req);
+      startRuntimeSession(urlData);
+
       inferenceSidecar.startSession(payload).then((sidecarResponse) => {
         res.status(202).json({
           status: 'starting',
           sidecar: sidecarResponse,
         });
       }).catch((error) => {
-        sendSidecarRuntimeError(res, error, 'Failed to start inference sidecar session');
+        console.error(error);
+        const details = error && error.response && error.response.data
+          ? error.response.data
+          : { message: error.message };
+        res.status(202).json({
+          status: 'starting_with_sidecar_warning',
+          sidecar: {
+            baseURL: inferenceSidecarBaseURL,
+            details,
+          },
+        });
       });
     });
 
@@ -243,18 +256,25 @@ app.prepare()
       ]).then((result) => {
         const sidecarResult = result[0];
         if (sidecarResult.status === 'rejected') {
-          sendSidecarRuntimeError(
-            res,
-            sidecarResult.reason,
-            'Failed to stop inference sidecar session',
-          );
-          return;
-        }
+          const details = sidecarResult.reason
+            && sidecarResult.reason.response
+            && sidecarResult.reason.response.data
+            ? sidecarResult.reason.response.data
+            : { message: sidecarResult.reason.message };
 
-        res.status(200).json({
-          status: 'stopped',
-          sidecar: sidecarResult.value,
-        });
+          res.status(200).json({
+            status: 'stopped_with_sidecar_warning',
+            sidecar: {
+              baseURL: inferenceSidecarBaseURL,
+              details,
+            },
+          });
+        } else {
+          res.status(200).json({
+            status: 'stopped',
+            sidecar: sidecarResult.value,
+          });
+        }
       });
     });
 
