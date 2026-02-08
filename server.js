@@ -33,6 +33,7 @@ const { normalizeSidecarFrame } = require('./server/processes/SidecarDetectionsA
 const { MongoDbManager } = require('./server/db/MongoDbManager');
 const { buildSidecarSessionPayload } = require('./server/utils/sidecarRuntimePayload');
 const { getRuntimeFeatureFlags } = require('./server/utils/runtimeFeatureFlags');
+const { buildRegisterCountingAreasHandler } = require('./server/utils/countingAreasRouteHandler');
 
 const config = loadConfig();
 
@@ -250,6 +251,8 @@ app.prepare()
     const useLegacyMjpegForV2 = runtimeFeatureFlags.useLegacyMjpegForV2;
     const useSidecarDetectionsForV2 = runtimeFeatureFlags.useSidecarDetectionsForV2;
     const autoStartV2RuntimeOnRoot = runtimeFeatureFlags.autoStartV2RuntimeOnRoot;
+    const maxTrackerFrameBackwardDrift = runtimeFeatureFlags.maxTrackerFrameBackwardDrift;
+    config.TRACKER_FRAME_MAX_BACKWARD_DRIFT = maxTrackerFrameBackwardDrift;
     const sidecarDetectionsPath = '/api/v1/stream/detections';
     let sidecarDetectionsStream = null;
     let sidecarFallbackFrameId = 0;
@@ -295,11 +298,17 @@ app.prepare()
             Opendatacam.setVideoResolution(normalized.videoResolution);
           }
 
-          // The sidecar emits events on a fixed interval and can repeat the same inference frame.
-          // Ignore duplicates to avoid skewing FPS/tracker updates toward stream tick rate.
-          if (sidecarLastProcessedFrameId !== null
-            && normalized.frameId === sidecarLastProcessedFrameId) {
-            return;
+          if (sidecarLastProcessedFrameId !== null) {
+            // Drop stale/out-of-order frames to avoid overlay jitter and FPS skew.
+            if (normalized.frameId < (sidecarLastProcessedFrameId - maxTrackerFrameBackwardDrift)) {
+              return;
+            }
+
+            // The sidecar emits events on a fixed interval and can repeat the same inference frame.
+            // Ignore duplicates to avoid skewing FPS/tracker updates toward stream tick rate.
+            if (normalized.frameId === sidecarLastProcessedFrameId) {
+              return;
+            }
           }
 
           sidecarLastProcessedFrameId = normalized.frameId;
@@ -687,25 +696,10 @@ app.prepare()
      * @apiSuccessExample Success-Response:
      *   HTTP/1.1 200 OK
      */
-    const handleRegisterCountingAreas = (req, res) => {
-      const countingAreas = req && req.body ? req.body.countingAreas : null;
-      if (countingAreas === null || typeof countingAreas !== 'object') {
-        return res.status(400).json({
-          error: 'countingAreas payload must be an object',
-        });
-      }
-
-      try {
-        Opendatacam.registerCountingAreas(countingAreas);
-        return res.sendStatus(200);
-      } catch (error) {
-        console.error('Failed to register counting areas');
-        console.error(error && error.message ? error.message : error);
-        return res.status(500).json({
-          error: 'Failed to register counting areas',
-        });
-      }
-    };
+    const handleRegisterCountingAreas = buildRegisterCountingAreasHandler({
+      opendatacam: Opendatacam,
+      logger: console,
+    });
 
     express.post('/counter/areas', handleRegisterCountingAreas);
 

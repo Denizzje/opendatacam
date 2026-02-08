@@ -102,6 +102,12 @@ In order to solve use cases that aren't taken care by our opendatacam base app, 
 
 See [Development notes](https://opendata.cam/docs/development/)
 
+### Supported Node.js versions (current modernization baseline)
+
+- Development and CI are validated on Node.js `18.x` and `20.x`.
+- The current Next.js stack (`next@10`) may require `NODE_OPTIONS=--openssl-legacy-provider` on newer Node releases.
+- This OpenSSL flag is transitional compatibility for the legacy Next.js/Webpack toolchain and should be removed after a future framework upgrade.
+
 ## LegoGears API demo (local)
 
 Run a complete sidecar-first API demo against local `LegoGears_v2` assets:
@@ -149,6 +155,8 @@ The `development` branch now contains the first modernization scaffolding:
 - `/api/v2/stream/mjpeg` now defaults to sidecar MJPEG (`/api/v1/stream/mjpeg`). Set `OPENDATACAM_V2_MJPEG_FALLBACK_LEGACY=true` to force legacy MJPEG
 - Sidecar runtime in `services/inference-sidecar/` now supports DarkHelp live inference with replay fallback for detections + MJPEG streams
 - `/api/v2/runtime/session/start` now forwards `inference.sidecar.runtime` defaults from config v4 to sidecar session payload
+- `/api/v2/counting/areas` now validates line/polygon payload schema and returns structured validation errors (`error`, `code`, `details`) on bad requests
+- Sidecar frame jitter handling now drops stale detections beyond `OPENDATACAM_V2_MAX_FRAME_DRIFT` (default: `2`) to keep overlays aligned
 - `docker/run/*/docker-compose.v4.yml` now runs sidecar-first (`OPENDATACAM_V2_USE_SIDECAR_DETECTIONS=true`) and mounts `./models` + `./videos` into sidecar runtime paths
 - `docker/run/desktop/docker-compose.v4.yml` now uses GPU sidecar build (`services/inference-sidecar/Dockerfile.gpu`) with `gpus: all`
 - Desktop compose now sets `DETECTIONS_STREAM_INTERVAL_MS=33` and `MJPEG_STREAM_INTERVAL_MS=33` for smoother sidecar video + overlay updates (default sidecar intervals remain `200ms` if unset)
@@ -174,5 +182,6 @@ For business inquiries or professional support requests please contact [Valentin
 
 - Original darknet @pjreddie  : [https://pjreddie.com/darknet/](https://pjreddie.com/darknet/)
 - Maintained Darknet fork by @CCodeRun : [https://codeberg.org/CCodeRun/darknet](https://codeberg.org/CCodeRun/darknet)
+- Current model weights reference implementation by hank-ai Darknet releases: [https://github.com/hank-ai/darknet/releases](https://github.com/hank-ai/darknet/releases)
 - IOU / V-IOU Tracker by @bochinski : [https://github.com/bochinski/iou-tracker/](https://github.com/bochinski/iou-tracker/)
 - Next.js by @zeit : [https://github.com/zeit/next.js](https://github.com/zeit/next.js)

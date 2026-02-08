@@ -6,6 +6,74 @@ import {
   deleteCountingArea, setMode, EDITOR_MODE, restoreCountingAreasFromJSON,
 } from '../../statemanagement/app/CounterStateManagement';
 
+const LINE_TYPES = new Set(['bidirectional', 'leftright_topbottom', 'rightleft_bottomtop']);
+
+function isFiniteNumber(value) {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isValidPoint(point) {
+  return point && typeof point === 'object'
+    && isFiniteNumber(point.x)
+    && isFiniteNumber(point.y);
+}
+
+function isValidResolution(resolution) {
+  return resolution && typeof resolution === 'object'
+    && isFiniteNumber(resolution.w)
+    && isFiniteNumber(resolution.h)
+    && resolution.w > 0
+    && resolution.h > 0;
+}
+
+function validateImportedCountingAreas(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('Counting areas file must contain an object keyed by area IDs.');
+  }
+
+  Object.keys(data).forEach((areaKey) => {
+    const area = data[areaKey];
+    if (area == null) {
+      return;
+    }
+
+    if (!area.location || typeof area.location !== 'object') {
+      throw new Error(`Area "${areaKey}" is missing location.`);
+    }
+
+    if (!Array.isArray(area.location.points)) {
+      throw new Error(`Area "${areaKey}" location.points must be an array.`);
+    }
+
+    if (!isValidResolution(area.location.refResolution)) {
+      throw new Error(`Area "${areaKey}" has an invalid location.refResolution.`);
+    }
+
+    area.location.points.forEach((point, index) => {
+      if (!isValidPoint(point)) {
+        throw new Error(`Area "${areaKey}" has invalid point at index ${index}.`);
+      }
+    });
+
+    const areaType = area.type || 'bidirectional';
+    if (LINE_TYPES.has(areaType) && area.location.points.length !== 2) {
+      throw new Error(`Line area "${areaKey}" must contain exactly 2 points.`);
+    }
+
+    if (areaType === 'polygon') {
+      if (area.location.points.length < 4) {
+        throw new Error(`Polygon area "${areaKey}" must contain at least 4 points.`);
+      }
+
+      const first = area.location.points[0];
+      const last = area.location.points[area.location.points.length - 1];
+      if (first.x !== last.x || first.y !== last.y) {
+        throw new Error(`Polygon area "${areaKey}" must be closed (first and last point must match).`);
+      }
+    }
+  });
+}
+
 class MenuCountingAreasEditor extends Component {
   handleDelete() {
     if (this.props.countingAreas.size > 1) {
@@ -16,7 +84,6 @@ class MenuCountingAreasEditor extends Component {
   }
 
   loadFile() {
-    console.log('loadFile');
     let input; let file; let
       fr;
 
@@ -36,9 +103,14 @@ class MenuCountingAreasEditor extends Component {
       file = input.files[0];
       fr = new FileReader();
       fr.onload = (e) => {
-        const lines = e.target.result;
-        const json = JSON.parse(lines);
-        this.props.dispatch(restoreCountingAreasFromJSON(json));
+        try {
+          const lines = e.target.result;
+          const json = JSON.parse(lines);
+          validateImportedCountingAreas(json);
+          this.props.dispatch(restoreCountingAreasFromJSON(json));
+        } catch (error) {
+          alert(`Failed to import counting areas: ${error.message}`);
+        }
       };
       fr.readAsText(file);
     }

@@ -163,6 +163,30 @@ describe('Opendatacam', () => {
   });
 
   describe('counting area registration', () => {
+    it('registers polygon area with computed points', () => {
+      Opendatacam.registerCountingAreas({
+        polygonArea: {
+          color: 'yellow',
+          type: 'polygon',
+          location: {
+            points: [
+              { x: 10, y: 10 },
+              { x: 100, y: 10 },
+              { x: 100, y: 100 },
+              { x: 10, y: 10 },
+            ],
+            refResolution: { w: 200, h: 200 },
+          },
+          name: 'polygon',
+        },
+      });
+
+      const registered = Opendatacam.getCountingAreas().polygonArea;
+      expect(registered).toBeDefined();
+      expect(registered.computed).toBeDefined();
+      expect(registered.computed.points.length).toBe(4);
+    });
+
     it('does not throw when refResolution is missing', () => {
       expect(() => {
         Opendatacam.registerCountingAreas({
@@ -179,6 +203,23 @@ describe('Opendatacam', () => {
           },
         });
       }).not.toThrow();
+    });
+
+    it('does not compute area when location has fewer than 2 points', () => {
+      Opendatacam.registerCountingAreas({
+        invalidArea: {
+          color: 'yellow',
+          type: 'bidirectional',
+          location: {
+            points: [{ x: 100, y: 100 }],
+            refResolution: { w: 1280, h: 720 },
+          },
+          name: 'invalid',
+        },
+      });
+
+      expect(Opendatacam.getCountingAreas().invalidArea).toBeDefined();
+      expect(Opendatacam.getCountingAreas().invalidArea.computed).toBeNull();
     });
 
     it('resets stale counter summary when replacing counting areas', () => {

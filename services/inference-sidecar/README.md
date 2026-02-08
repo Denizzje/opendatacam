@@ -17,6 +17,12 @@ Implemented endpoints:
 - `GET /api/v1/stream/detections` (continuous SSE payload stream, uses live DarkHelp detections when available, otherwise replay/demo)
 - `GET /api/v1/stream/mjpeg` (continuous MJPEG stream, uses live DarkHelp frames when available, otherwise replay/static fallback)
 
+Detections stream metadata now includes monotonic timestamps and frame IDs:
+
+- `frame_id` / `timestamp_ms` (transport frame metadata)
+- `inference_frame_id` / `inference_timestamp_ms` when DarkHelp inference is active
+- `replay_frame_id` / `replay_timestamp_ms` when replay fallback is active
+
 ## Runtime session payload overrides
 
 `POST /api/v1/runtime/session/start` accepts optional `sidecar_runtime` overrides:
@@ -77,6 +83,8 @@ If your runtime requires explicit sidecar start payload, set:
 ```bash
 START_PAYLOAD_FILE=/tmp/sidecar-start.json npm run smoke:sidecar
 ```
+
+CI uses `scripts/smoke/ci-sidecar-smoke.sh`, which boots a mock sidecar and OpenDataCam, then runs `npm run smoke:sidecar` as a gate.
 
 ## Runtime environment variables
 

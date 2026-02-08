@@ -76,6 +76,8 @@ describe('SidecarDetectionsAdapter', () => {
     }, 41);
 
     expect(normalized.frameId).toBe(41);
+    expect(normalized.transportFrameId).toBeNull();
+    expect(normalized.timestampMs).toBeNull();
     expect(normalized.videoResolution).toBeNull();
     expect(normalized.objects).toEqual([]);
   });
@@ -98,6 +100,25 @@ describe('SidecarDetectionsAdapter', () => {
     }, 0);
 
     expect(normalized.frameId).toBe(13);
+    expect(normalized.transportFrameId).toBe(99);
+  });
+
+  it('preserves frame metadata from sidecar payload', () => {
+    const normalized = normalizeSidecarFrame({
+      frame_id: 10,
+      inference_frame_id: 12,
+      timestamp_ms: 111,
+      inference_timestamp_ms: 123,
+      source: 'inference-sidecar-darkhelp',
+      video_source: '/videos/demo.mp4',
+      objects: [],
+    }, 0);
+
+    expect(normalized.frameId).toBe(12);
+    expect(normalized.transportFrameId).toBe(10);
+    expect(normalized.timestampMs).toBe(123);
+    expect(normalized.source).toBe('inference-sidecar-darkhelp');
+    expect(normalized.videoSource).toBe('/videos/demo.mp4');
   });
 
   it('filters objects that cannot be normalized', () => {

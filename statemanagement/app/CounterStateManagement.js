@@ -119,6 +119,10 @@ export function resetCountingAreas() {
 
 export function deleteCountingArea(id) {
   return (dispatch, getState) => {
+    if (!id) {
+      return;
+    }
+
     dispatch({
       type: DELETE_COUNTING_AREA,
       payload: id,
@@ -166,11 +170,16 @@ export function addCountingArea(type = 'bidirectional') {
     });
 
     dispatch(selectCountingArea(newCountingAreaId));
+    return newCountingAreaId;
   };
 }
 
 export function saveCountingAreaLocation(id, location) {
   return (dispatch, getState) => {
+    if (!id || !location || !Array.isArray(location.points) || location.points.length < 2) {
+      return;
+    }
+
     // Compute bearing of the line (if polygon of the first line)
     const lineBearing = computeLineBearing(location.points[0].x,
       -location.points[0].y,
@@ -212,6 +221,10 @@ export function saveCountingAreaLocation(id, location) {
 
 export function toggleCountingAreaType(id, currentDirection) {
   return (dispatch) => {
+    if (!id) {
+      return;
+    }
+
     let newDirection = COUNTING_AREA_TYPE.BIDIRECTIONAL;
 
     if (currentDirection === COUNTING_AREA_TYPE.BIDIRECTIONAL) {
@@ -234,6 +247,10 @@ export function toggleCountingAreaType(id, currentDirection) {
 
 export function saveCountingAreaName(id, name) {
   return (dispatch) => {
+    if (!id) {
+      return;
+    }
+
     // console.log('saveName')
     dispatch({
       type: SAVE_COUNTING_AREA_NAME,

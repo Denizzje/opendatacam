@@ -46,7 +46,27 @@ class CanvasEngine extends PureComponent {
     }
   }
 
+  getTrackerFrameMaxBackwardDrift() {
+    if (typeof window === 'undefined' || !window.CONFIG) {
+      return 2;
+    }
+
+    const parsed = Number.parseInt(window.CONFIG.TRACKER_FRAME_MAX_BACKWARD_DRIFT, 10);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return parsed;
+    }
+
+    return 2;
+  }
+
   loopUpdateCanvas() {
+    const nextFrameIndex = this.props.trackerData.frameIndex;
+    if (this.lastFrameDrawn >= 0
+      && nextFrameIndex < (this.lastFrameDrawn - this.getTrackerFrameMaxBackwardDrift())) {
+      this.rafHandle = raf(this.loopUpdateCanvas.bind(this));
+      return;
+    }
+
     if (this.lastFrameDrawn !== this.props.trackerData.frameIndex) {
       // Clear previous frame
       if (this.props.mode !== CANVAS_RENDERING_MODE.PATHVIEW) {

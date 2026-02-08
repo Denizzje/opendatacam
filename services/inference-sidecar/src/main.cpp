@@ -1217,6 +1217,12 @@ int main() {
         }
 
         json detection = state.nextDetection(emitDemoDetection && replayDetections.empty());
+        if (detection.contains("frame_id")) {
+          detection["transport_frame_id"] = detection["frame_id"];
+        }
+        if (detection.contains("timestamp_ms")) {
+          detection["transport_timestamp_ms"] = detection["timestamp_ms"];
+        }
         const bool sessionStarted = detection.contains("session_started")
           && detection["session_started"].is_boolean()
           && detection["session_started"].get<bool>();
@@ -1245,6 +1251,9 @@ int main() {
             if (live.contains("frame_id")) {
               detection["inference_frame_id"] = live["frame_id"];
             }
+            if (live.contains("timestamp_ms")) {
+              detection["inference_timestamp_ms"] = live["timestamp_ms"];
+            }
 
             usedLiveInference = true;
           }
@@ -1260,6 +1269,9 @@ int main() {
           detection["source"] = "inference-sidecar-replay";
           if (replayFrame.contains("frame_id")) {
             detection["replay_frame_id"] = replayFrame["frame_id"];
+          }
+          if (replayFrame.contains("timestamp_ms")) {
+            detection["replay_timestamp_ms"] = replayFrame["timestamp_ms"];
           }
 
           if (replayLoop || (detectionCursor + 1 < replayDetections.size())) {

@@ -161,15 +161,37 @@ const normalizeSidecarFrame = (payload = {}, fallbackFrameId = 0) => {
     payload.frame,
     fallbackFrameId,
   );
+  const transportFrameId = firstNumber(payload.frame_id, payload.frameId, payload.frame);
+  const timestampMs = firstNumber(
+    payload.inference_timestamp_ms,
+    payload.inferenceTimestampMs,
+    payload.replay_timestamp_ms,
+    payload.replayTimestampMs,
+    payload.timestamp_ms,
+    payload.timestampMs,
+    payload.meta && payload.meta.timestamp_ms,
+    payload.meta && payload.meta.timestampMs,
+  );
   const videoResolution = extractVideoResolution(payload);
   const objects = Array.isArray(payload.objects)
     ? payload.objects
       .map((detection) => normalizeSidecarDetection(detection, videoResolution))
       .filter((normalized) => normalized !== null)
     : [];
+  const source = typeof payload.source === 'string' ? payload.source : null;
+  let videoSource = null;
+  if (typeof payload.video_source === 'string') {
+    videoSource = payload.video_source;
+  } else if (typeof payload.videoSource === 'string') {
+    videoSource = payload.videoSource;
+  }
 
   return {
     frameId,
+    transportFrameId,
+    timestampMs,
+    source,
+    videoSource,
     videoResolution,
     objects,
   };

@@ -32,7 +32,10 @@ class CounterView extends React.PureComponent {
         }
         {this.props.isRecording && !this.props.isAtLeastOneCountingAreasDefined &&
           <>
-            <div className="modal">Not counting lines defined , Blablabalbla Define counting lines before start recording</div>
+            <div className="modal">
+              No counting areas are configured yet. Stop recording, add at least one line or
+              polygon, then start recording again.
+            </div>
           </>
         }
         <BtnRecording />

@@ -28,6 +28,7 @@ class CounterAreasEditor extends Component {
     this.currentPolygon = null;
 
     this.isDrawing = false;
+    this.activeDrawingAreaId = null;
     this.points = [];
   }
 
@@ -50,15 +51,36 @@ class CounterAreasEditor extends Component {
   resetDrawing() {
     this.isDrawing = false;
     this.points = [];
+    this.activeDrawingAreaId = null;
     this.currentPolygon = null;
     this.currentLine = null;
+  }
+
+  getActiveAreaId() {
+    return this.activeDrawingAreaId || this.props.selectedCountingArea;
+  }
+
+  getCounterColorForArea(areaId) {
+    if (!areaId) {
+      return getCounterColor('yellow');
+    }
+
+    const colorKey = this.props.countingAreas.getIn([areaId, 'color']);
+    if (!colorKey) {
+      return getCounterColor('yellow');
+    }
+
+    return getCounterColor(colorKey);
   }
 
   escFunction(event) {
     // Prevent catching esc key press from delete or ask name modal
     if (this.props.mode === EDITOR_MODE.EDIT_LINE || this.props.mode === EDITOR_MODE.EDIT_POLYGON) {
       if (event.keyCode === 27) {
-        this.props.dispatch(deleteCountingArea(this.props.selectedCountingArea));
+        const areaId = this.getActiveAreaId();
+        if (areaId) {
+          this.props.dispatch(deleteCountingArea(areaId));
+        }
         this.resetDrawing();
       }
     }
@@ -68,18 +90,24 @@ class CounterAreasEditor extends Component {
     this.editorCanvas.on('mouse:down', (o) => {
       if (!this.isDrawing) {
         const areaType = this.props.mode === EDITOR_MODE.EDIT_LINE ? 'bidirectional' : 'polygon';
-        this.props.dispatch(addCountingArea(areaType));
+        this.activeDrawingAreaId = this.props.dispatch(addCountingArea(areaType))
+          || this.props.selectedCountingArea;
       }
 
       this.isDrawing = true;
       const pointer = this.editorCanvas.getPointer(o.e);
+      const activeAreaId = this.getActiveAreaId();
+      if (!activeAreaId) {
+        this.resetDrawing();
+        return;
+      }
 
       if (this.props.mode === EDITOR_MODE.EDIT_POLYGON) {
         if (this.checkIfClosedPolygon(pointer)) {
           // Close polygon
           this.points.push(this.points[0]);
           // Save polygon
-          this.props.dispatch(saveCountingAreaLocation(this.props.selectedCountingArea, {
+          this.props.dispatch(saveCountingAreaLocation(activeAreaId, {
             points: this.points,
             refResolution: {
               w: this.editorCanvas.width,
@@ -96,10 +124,11 @@ class CounterAreasEditor extends Component {
         this.points.push(pointer);
 
         this.editorCanvas.remove(this.currentPolygon);
+        const areaColor = this.getCounterColorForArea(activeAreaId);
         this.currentPolygon = new fabric.Polygon(this.points, {
           strokeWidth: 5,
-          fill: getCounterColor(this.props.countingAreas.getIn([this.props.selectedCountingArea, 'color'])),
-          stroke: getCounterColor(this.props.countingAreas.getIn([this.props.selectedCountingArea, 'color'])),
+          fill: areaColor,
+          stroke: areaColor,
           opacity: 0.3,
           selectable: false,
           hasBorders: false,
@@ -119,7 +148,7 @@ class CounterAreasEditor extends Component {
           // Only record if line distance if superior to some threshold to avoid single clicks
           if (computeDistance(point1, point2) > 50) {
             // Maybe use getCenterPoint to persist center
-            this.props.dispatch(saveCountingAreaLocation(this.props.selectedCountingArea, {
+            this.props.dispatch(saveCountingAreaLocation(activeAreaId, {
               points: this.points,
               refResolution: {
                 w: this.editorCanvas.width,
@@ -128,10 +157,11 @@ class CounterAreasEditor extends Component {
             }));
           } else {
             // Cancel line, not long enough
-            this.props.dispatch(deleteCountingArea(this.props.selectedCountingArea));
+            this.props.dispatch(deleteCountingArea(activeAreaId));
           }
           this.points = [];
           this.isDrawing = false;
+          this.activeDrawingAreaId = null;
           return;
         }
       }
@@ -146,10 +176,11 @@ class CounterAreasEditor extends Component {
         this.currentLine.set({ x2: pointer.x, y2: pointer.y });
       }
 
+      const areaColor = this.getCounterColorForArea(activeAreaId);
       this.currentLine = new fabric.Line(lineCoord, {
         strokeWidth: 5,
-        fill: getCounterColor(this.props.countingAreas.getIn([this.props.selectedCountingArea, 'color'])),
-        stroke: getCounterColor(this.props.countingAreas.getIn([this.props.selectedCountingArea, 'color'])),
+        fill: areaColor,
+        stroke: areaColor,
         originX: 'center',
         originY: 'center',
       });
@@ -157,7 +188,7 @@ class CounterAreasEditor extends Component {
 
       this.editorCanvas.add(new fabric.Circle({
         radius: 5,
-        fill: getCounterColor(this.props.countingAreas.getIn([this.props.selectedCountingArea, 'color'])),
+        fill: areaColor,
         top: pointer.y,
         left: pointer.x,
         originX: 'center',
@@ -166,7 +197,7 @@ class CounterAreasEditor extends Component {
     });
 
     this.editorCanvas.on('mouse:move', (o) => {
-      if (!this.isDrawing) return;
+      if (!this.isDrawing || !this.currentLine) return;
 
       const pointer = this.editorCanvas.getPointer(o.e);
       this.currentLine.set({ x2: pointer.x, y2: pointer.y });
@@ -178,7 +209,14 @@ class CounterAreasEditor extends Component {
   componentDidUpdate(prevProps) {
     // We may have to delete some lines
     if (prevProps.countingAreas !== this.props.countingAreas) {
-      this.reRenderCountingAreasInEditor(this.props.countingAreas);
+      const shouldSkipRerender = this.isDrawing && !!this.activeDrawingAreaId;
+      if (!shouldSkipRerender) {
+        this.reRenderCountingAreasInEditor(this.props.countingAreas);
+      }
+    }
+
+    if (!this.activeDrawingAreaId && this.props.selectedCountingArea) {
+      this.activeDrawingAreaId = this.props.selectedCountingArea;
     }
 
     // TODO later in order to fix bug if resizing windows while in counter editing mode
@@ -288,11 +326,17 @@ class CounterAreasEditor extends Component {
           && (
           <AskNameModal
             save={(name) => {
-              this.props.dispatch(saveCountingAreaName(this.props.selectedCountingArea, name));
+              const areaId = this.getActiveAreaId();
+              if (areaId) {
+                this.props.dispatch(saveCountingAreaName(areaId, name));
+              }
               this.props.dispatch(setMode(this.props.lastEditingMode));
             }}
             cancel={(name) => {
-              this.props.dispatch(deleteCountingArea(this.props.selectedCountingArea));
+              const areaId = this.getActiveAreaId();
+              if (areaId) {
+                this.props.dispatch(deleteCountingArea(areaId));
+              }
               this.props.dispatch(setMode(this.props.lastEditingMode));
             }}
           />
