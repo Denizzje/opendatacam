@@ -192,6 +192,9 @@ app.prepare()
       });
     };
 
+    const sidecarMjpegStreamURL = `${inferenceSidecarBaseURL}/api/v1/stream/mjpeg`;
+    const useLegacyMjpegForV2 = process.env.OPENDATACAM_V2_MJPEG_FALLBACK_LEGACY === 'true';
+
     // TODO add compression: https://github.com/expressjs/compression
 
     // This render pages/index.js for a request to /
@@ -278,7 +281,26 @@ app.prepare()
       });
     });
 
+    express.get('/api/v2/runtime/health', (req, res) => {
+      Promise.all([
+        inferenceSidecar.getHealth(),
+        inferenceSidecar.getReadiness(),
+      ]).then(([health, readiness]) => {
+        res.json({
+          status: 'ok',
+          sidecar: {
+            baseURL: inferenceSidecarBaseURL,
+            health,
+            readiness,
+          },
+        });
+      }).catch((error) => {
+        sendSidecarRuntimeError(res, error, 'Failed to fetch sidecar health');
+      });
+    });
+
     let mjpgProxy = null;
+    let sidecarMjpegProxy = null;
     /**
      * @api {get} /webcam/stream Stream (MJPEG)
      * @apiName Stream
@@ -301,10 +323,17 @@ app.prepare()
     });
 
     express.get('/api/v2/stream/mjpeg', (req, res) => {
-      if (mjpgProxy == null) {
-        mjpgProxy = new MjpegProxy(`http://localhost:${config.PORTS.darknet_mjpeg_stream}`);
+      if (useLegacyMjpegForV2) {
+        if (mjpgProxy == null) {
+          mjpgProxy = new MjpegProxy(`http://localhost:${config.PORTS.darknet_mjpeg_stream}`);
+        }
+        return mjpgProxy.proxyRequest(req, res);
       }
-      return mjpgProxy.proxyRequest(req, res);
+
+      if (sidecarMjpegProxy == null) {
+        sidecarMjpegProxy = new MjpegProxy(sidecarMjpegStreamURL);
+      }
+      return sidecarMjpegProxy.proxyRequest(req, res);
     });
 
     /**
@@ -674,6 +703,17 @@ app.prepare()
       res.sendStatus(200);
     });
 
+    express.post('/api/v2/recordings/start', (req, res) => {
+      if (YOLO.isLive()) {
+        Opendatacam.startRecording();
+      } else {
+        Opendatacam.requestFileRecording(YOLO);
+      }
+      res.status(200).json({
+        status: 'recording_started',
+      });
+    });
+
     /**
      * @api {get} /recording/stop Stop recording
      * @apiName Stop
@@ -687,6 +727,13 @@ app.prepare()
     express.get('/recording/stop', (req, res) => {
       Opendatacam.stopRecording();
       res.sendStatus(200);
+    });
+
+    express.post('/api/v2/recordings/stop', (req, res) => {
+      Opendatacam.stopRecording();
+      res.status(200).json({
+        status: 'recording_stopped',
+      });
     });
 
     /**
@@ -771,6 +818,23 @@ app.prepare()
       });
     });
 
+    express.get('/api/v2/recordings', (req, res) => {
+      const limit = parseInt(req.query.limit, 10) || 20;
+      const offset = parseInt(req.query.offset, 10) || 0;
+
+      const recordingPromise = dbManager.getRecordings(limit, offset);
+      const countPromise = dbManager.getRecordingsCount();
+
+      Promise.all([recordingPromise, countPromise]).then((values) => {
+        res.json({
+          offset,
+          limit,
+          total: values[1],
+          recordings: values[0],
+        });
+      });
+    });
+
     /**
      * @api {get} /recording/:id/tracker Tracker data
      * @apiName Tracker data
@@ -830,6 +894,15 @@ app.prepare()
       });
     });
 
+    express.get('/api/v2/recordings/:id/tracker', (req, res) => {
+      dbManager.getTrackerHistoryOfRecording(req.params.id).then((trackerData) => {
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-disposition',
+          `attachment; filename=trackerData-${req.params.id}.json`);
+        res.json(trackerData);
+      });
+    });
+
     /**
      * @api {get} /recording/:id Get recording
      * @apiName Get recording
@@ -867,6 +940,12 @@ app.prepare()
       });
     });
 
+    express.get('/api/v2/recordings/:id', (req, res) => {
+      dbManager.getRecording(req.params.id).then((recordingData) => {
+        res.json(recordingData);
+      });
+    });
+
     /**
      * @api {delete} /recording/:id Delete recording
      * @apiName Delete recording
@@ -882,6 +961,14 @@ app.prepare()
     express.delete('/recording/:id', (req, res) => {
       dbManager.deleteRecording(req.params.id).then(() => {
         res.sendStatus(200);
+      });
+    });
+
+    express.delete('/api/v2/recordings/:id', (req, res) => {
+      dbManager.deleteRecording(req.params.id).then(() => {
+        res.status(200).json({
+          status: 'deleted',
+        });
       });
     });
 
@@ -988,6 +1075,25 @@ app.prepare()
       });
     });
 
+    express.get('/api/v2/recordings/:id/counter', (req, res) => {
+      dbManager.getCounterHistoryOfRecording(req.params.id).then((counterData) => {
+        if (Object.keys(counterData).length === 0) {
+          res.sendStatus(404);
+          return;
+        }
+
+        res.setHeader('Content-Type', 'application/json');
+        const startDate = counterData.dateStart.toISOString().split('T')[0];
+        const fileName = `counterData-${startDate}-${req.params.id}.json`;
+        res.setHeader('Content-disposition', `attachment; filename=${fileName}`);
+        res.json(counterData);
+      }).catch((reason) => {
+        console.log('Getting counter records failed');
+        console.log(reason);
+        res.sendStatus(500);
+      });
+    });
+
     /**
      * @api {get} /recording/:id/counter/csv Counter history (CSV)
      * @apiName Counter history (CSV)
@@ -1038,6 +1144,47 @@ app.prepare()
               }
 
               // Timestamp
+              const isGpsTimestampPresent = countedItem.gpsTimestamp !== null;
+              if (isGpsTimestampPresent) {
+                ret.gpsTimestamp = countedItem.gpsTimestamp.toISOString();
+              }
+            }
+
+            return ret;
+          });
+        } else {
+          data = [];
+        }
+        console.log(`Exporting ${req.params.id} counter history to CSV`);
+        const startDate = counterData.dateStart.toISOString().split('T')[0];
+        const fileName = `counterData-${startDate}-${req.params.id}.csv`;
+        res.csv(data, true, { 'Content-disposition': `attachment; filename=${fileName}` });
+      });
+    });
+
+    express.get('/api/v2/recordings/:id/counter/csv', (req, res) => {
+      dbManager.getCounterHistoryOfRecording(req.params.id).then((counterData) => {
+        let data = counterData.counterHistory;
+        if (data) {
+          data = flatten(data);
+          data = data.map((countedItem) => {
+            const ret = {
+              ...countedItem,
+              timestamp: countedItem.timestamp.toISOString(),
+              area: counterData.areas[countedItem.area].name,
+            };
+
+            if (isGpsEnabled) {
+              const isExportOsmLink = config.GPS && config.GPS.csvExportOpenStreetMapsUrl === true;
+              if (isExportOsmLink) {
+                const isLatLonPresent = countedItem.lat !== null && countedItem.lon !== null;
+                if (isLatLonPresent) {
+                  ret.link = `https://www.openstreetmap.org/?mlat=${countedItem.lat}&mlon=${countedItem.lon}#map=19/${countedItem.lat}/${countedItem.lon}`;
+                } else {
+                  ret.link = null;
+                }
+              }
+
               const isGpsTimestampPresent = countedItem.gpsTimestamp !== null;
               if (isGpsTimestampPresent) {
                 ret.gpsTimestamp = countedItem.gpsTimestamp.toISOString();
@@ -1204,10 +1351,22 @@ app.prepare()
       res.json(config);
     });
 
+    express.get('/api/v2/config', (req, res) => {
+      res.json(config);
+    });
+
     // API to read opendatacam_videos directory and return list of videos available
     // TODO JSDOC
     // Get video files available in opendatacam_videos directory
     express.get('/files', (req, res) => {
+      FileSystemManager.getFiles().then((files) => {
+        res.json(files);
+      }, (error) => {
+        res.sendStatus(500).send(error);
+      });
+    });
+
+    express.get('/api/v2/files', (req, res) => {
       FileSystemManager.getFiles().then((files) => {
         res.json(files);
       }, (error) => {
@@ -1273,6 +1432,38 @@ app.prepare()
       });
     });
 
+    express.post('/api/v2/files', (req, res) => {
+      uploadMulter(req, res, (err) => {
+        console.log('uploadMulter callback');
+        if (err) {
+          console.log(err);
+          res.sendStatus(500);
+          return;
+        }
+
+        console.log('File upload done');
+        console.log('Stop YOLO');
+        Opendatacam.stopRecording();
+        YOLO.stop().then(() => {
+          console.log('YOLO stopped');
+          console.log(req.file.path);
+
+          const yoloConfigClone = cloneDeep(yoloConfig);
+          yoloConfigClone.videoParams = req.file.path;
+          yoloConfigClone.videoType = 'file';
+          YOLO = new YoloDarknet(yoloConfigClone);
+
+          YOLO.start();
+          Opendatacam.recordingStatus.filename = req.file.filename;
+        }, (error) => {
+          console.log('YOLO does not stop');
+          console.log(error);
+        });
+
+        res.json(req.file.path);
+      });
+    });
+
     /**
      * @api {post} /ui Save UI settings
      * @apiName  Save UI settings
@@ -1300,6 +1491,11 @@ app.prepare()
       res.sendStatus(200);
     });
 
+    express.post('/api/v2/ui', (req, res) => {
+      Opendatacam.setUISettings(req.body);
+      res.sendStatus(200);
+    });
+
     /**
      * @api {get} /ui Get UI settings
      * @apiName  Get UI settings
@@ -1318,6 +1514,11 @@ app.prepare()
           }
      */
     express.get('/ui', (req, res) => {
+      const uiSettings = Opendatacam.getUISettings();
+      res.json(uiSettings);
+    });
+
+    express.get('/api/v2/ui', (req, res) => {
       const uiSettings = Opendatacam.getUISettings();
       res.json(uiSettings);
     });
