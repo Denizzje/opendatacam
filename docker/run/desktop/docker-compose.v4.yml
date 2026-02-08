@@ -1,16 +1,17 @@
-version: "2.3"
 services:
   opendatacam:
     restart: always
-    runtime: nvidia
-    image: opendatacam/opendatacam:v3.0.2-desktop
+    build:
+      context: ../../..
+      dockerfile: docker/build/opendatacam-v4/Dockerfile
     privileged: true
     environment:
+      - OPENDATACAM_CONFIG_PATH=/var/local/opendatacam/config.v4.json
       - INFERENCE_SIDECAR_URL=http://inference-sidecar:9080
       - OPENDATACAM_V2_USE_SIDECAR_DETECTIONS=true
       - OPENDATACAM_V2_MJPEG_FALLBACK_LEGACY=false
     volumes:
-      - './config.json:/var/local/opendatacam/config.json'
+      - './config.v4.json:/var/local/opendatacam/config.v4.json:ro'
     ports:
       - "8080:8080"
       - "8070:8070"
@@ -40,7 +41,7 @@ services:
     ports:
       - "9080:9080"
   mongo:
-    image: mongo
+    image: mongo:4.4.8
     restart: always
     ports:
       - "27017:27017"

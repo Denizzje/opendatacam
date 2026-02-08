@@ -16,3 +16,13 @@ public/static/trackerHistoryExport.json
 .build
 services/inference-sidecar/build
 LegoGears_v2/
+docker/run/desktop/config.json
+docker/run/cpu-amd64/config.json
+docker/run/desktop/models/*
+!docker/run/desktop/models/.gitkeep
+docker/run/desktop/videos/*
+!docker/run/desktop/videos/.gitkeep
+docker/run/cpu-amd64/models/*
+!docker/run/cpu-amd64/models/.gitkeep
+docker/run/cpu-amd64/videos/*
+!docker/run/cpu-amd64/videos/.gitkeep

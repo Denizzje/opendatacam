@@ -2,15 +2,18 @@
 const path = require('path');
 const fs = require('fs');
 
-const config = require('../../config.json');
+const { loadConfig } = require('../utils/configLoader');
+
+const DEFAULT_UPLOAD_FOLDER = '/var/local/darknet/opendatacam_videos_uploaded';
 
 class FileSystemManager {
   constructor() {
-    this.filesPath = path.join(config.VIDEO_UPLOAD_FOLDER);
+    const config = loadConfig();
+    this.filesPath = path.join(config.VIDEO_UPLOAD_FOLDER || DEFAULT_UPLOAD_FOLDER);
     // make directory if not exist
     try {
       if (!fs.existsSync(this.filesPath)) {
-        fs.mkdirSync(this.filesPath);
+        fs.mkdirSync(this.filesPath, { recursive: true });
       }
     } catch (error) {
       console.log('Failed to create directory opendatacam_videos_uploaded, it might already exists or you are in simulation mode');
