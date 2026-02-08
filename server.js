@@ -22,13 +22,15 @@ const Opendatacam = require('./server/Opendatacam');
 const { getURLData } = require('./server/utils/urlHelper');
 const FileSystemManager = require('./server/fs/FileSystemManager');
 const { MjpegProxy } = require('./server/utils/mjpegproxy');
-const config = require('./config.json');
+const { loadConfig } = require('./server/utils/configLoader');
 const configHelper = require('./server/utils/configHelper');
 const GpsTracker = require('./server/tracker/GpsTracker');
 const packageJson = require('./package.json');
 const { YoloDarknet } = require('./server/processes/YoloDarknet');
 const { InferenceSidecarClient } = require('./server/processes/InferenceSidecarClient');
 const { MongoDbManager } = require('./server/db/MongoDbManager');
+
+const config = loadConfig();
 
 if (packageJson.version !== config.OPENDATACAM_VERSION) {
   console.log('-----------------------------------');

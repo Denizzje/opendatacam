@@ -21,5 +21,5 @@ node scripts/migrate-config-v3-to-v4.js ./config.json ./config.v4.json
 
 ## Notes
 
-- This is the first migration scaffold and is intentionally not wired into runtime yet.
-- The runtime is still loading `config.json` until the backend config loader is replaced in a follow-up change.
+- The backend now includes a config loader bridge that can parse `schema_version: 4` and map it to the current runtime shape.
+- You can point runtime to a custom config path with `OPENDATACAM_CONFIG_PATH=/path/to/config.v4.json`.

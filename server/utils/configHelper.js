@@ -1,5 +1,5 @@
 require('dotenv').config();
-const config = require('../../config.json');
+const { loadConfig } = require('./configLoader');
 
 //  logic is:
 // - Get the desired env variables (using dotenv)
@@ -47,6 +47,7 @@ module.exports = {
   getPortFromConfig,
   parseAndTestIsNumber,
   getMjpegStreamPort: () => {
+    const config = loadConfig();
     const port = getPortFromConfig(config, 'darknet_mjpeg_stream', 8090);
     if (
       envDarknetJsonStreamPort
@@ -57,6 +58,7 @@ module.exports = {
     return port;
   },
   getJsonStreamPort: () => {
+    const config = loadConfig();
     const port = getPortFromConfig(config, 'darknet_json_stream', 8070);
     if (
       envDarknetJsonStreamPort
@@ -67,6 +69,7 @@ module.exports = {
     return port;
   },
   getAppPort: () => {
+    const config = loadConfig();
     const port = getPortFromConfig(config, 'app', 8080);
     if (envAppPort && parseAndTestIsNumber(envAppPort)) {
       return parseInt(envAppPort, 10);

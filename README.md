@@ -110,6 +110,7 @@ The `development` branch now contains the first modernization scaffolding:
 - `/api/v2/runtime/*` now integrates with `INFERENCE_SIDECAR_URL` (default: `http://localhost:9080`)
 - Sidecar scaffold in `services/inference-sidecar/`
 - Draft v4 config schema and migration helper
+- Runtime config bridge supports v4 via `OPENDATACAM_CONFIG_PATH=/path/to/config.v4.json`
 
 See `docs/migration-v3-to-v4.md` for current v4 config notes.
 
