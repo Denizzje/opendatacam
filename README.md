@@ -111,7 +111,7 @@ The `development` branch now contains the first modernization scaffolding:
 - Set `OPENDATACAM_V2_USE_SIDECAR_DETECTIONS=true` to use sidecar detections as runtime source for `/api/v2/runtime/session/*`
 - In sidecar detections mode, startup falls back to legacy runtime if sidecar session start fails
 - `/api/v2/stream/mjpeg` defaults to legacy stream for compatibility. Set `OPENDATACAM_V2_MJPEG_FALLBACK_LEGACY=false` to force sidecar MJPEG (`/api/v1/stream/mjpeg`)
-- Sidecar runtime scaffold in `services/inference-sidecar/` now includes continuous detections + MJPEG replay streams
+- Sidecar runtime in `services/inference-sidecar/` now supports DarkHelp live inference with replay fallback for detections + MJPEG streams
 - `docker/run/*/docker-compose.v4.yml` now runs sidecar-first (`OPENDATACAM_V2_USE_SIDECAR_DETECTIONS=true`)
 - Draft v4 config schema and migration helper
 - Runtime config bridge supports v4 via `OPENDATACAM_CONFIG_PATH=/path/to/config.v4.json`
@@ -132,6 +132,6 @@ For business inquiries or professional support requests please contact [Valentin
 ## 💌 Acknowledgments
 
 - Original darknet @pjreddie  : [https://pjreddie.com/darknet/](https://pjreddie.com/darknet/)
-- Darknet fork + YOLOv4 by @alexeyab : [https://github.com/alexeyab/darknet](https://github.com/alexeyab/darknet)
+- Maintained Darknet fork by @CCodeRun : [https://codeberg.org/CCodeRun/darknet](https://codeberg.org/CCodeRun/darknet)
 - IOU / V-IOU Tracker by @bochinski : [https://github.com/bochinski/iou-tracker/](https://github.com/bochinski/iou-tracker/)
 - Next.js by @zeit : [https://github.com/zeit/next.js](https://github.com/zeit/next.js)

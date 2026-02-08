@@ -15,6 +15,13 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
+#ifdef SIDECAR_HAS_DARKHELP
+#include <DarkHelp.hpp>
+#include <opencv2/core.hpp>
+#include <opencv2/imgcodecs.hpp>
+#include <opencv2/videoio.hpp>
+#endif
+
 namespace {
 
 using json = nlohmann::json;
@@ -73,6 +80,19 @@ bool getBoolOrDefault(const char * name, bool defaultValue) {
   }
 
   return defaultValue;
+}
+
+double getDoubleOrDefault(const char * name, double defaultValue) {
+  const std::string value = getEnvOrDefault(name, "");
+  if (value.empty()) {
+    return defaultValue;
+  }
+
+  try {
+    return std::stod(value);
+  } catch (const std::exception &) {
+    return defaultValue;
+  }
 }
 
 std::vector<unsigned char> loadBinaryFile(const std::string & path) {
@@ -226,6 +246,83 @@ std::optional<int> jsonNumberToInt(const json & value) {
   return std::nullopt;
 }
 
+bool isDigitsOnly(const std::string & value) {
+  if (value.empty()) {
+    return false;
+  }
+
+  return std::all_of(value.begin(), value.end(), [](unsigned char character) {
+    return std::isdigit(character) != 0;
+  });
+}
+
+std::optional<std::string> jsonStringOrNumber(const json & value) {
+  if (value.is_string()) {
+    const std::string text = value.get<std::string>();
+    if (!text.empty()) {
+      return text;
+    }
+  }
+
+  if (value.is_number_integer()) {
+    return std::to_string(value.get<int>());
+  }
+
+  if (value.is_number_unsigned()) {
+    return std::to_string(value.get<unsigned int>());
+  }
+
+  return std::nullopt;
+}
+
+std::optional<std::string> extractVideoSource(const json & payload) {
+  if (!payload.is_object()) {
+    return std::nullopt;
+  }
+
+  const std::vector<std::string> directKeys = {
+    "video_source",
+    "videoSource",
+    "source",
+    "video_input",
+    "videoInput",
+  };
+
+  for (const auto & key : directKeys) {
+    if (!payload.contains(key)) {
+      continue;
+    }
+
+    const auto extracted = jsonStringOrNumber(payload[key]);
+    if (extracted.has_value()) {
+      return extracted;
+    }
+  }
+
+  if (payload.contains("video") && payload["video"].is_object()) {
+    const auto & video = payload["video"];
+    const std::vector<std::string> nestedKeys = {"source", "input", "path", "url", "device"};
+    for (const auto & key : nestedKeys) {
+      if (!video.contains(key)) {
+        continue;
+      }
+
+      const auto extracted = jsonStringOrNumber(video[key]);
+      if (extracted.has_value()) {
+        return extracted;
+      }
+    }
+  }
+
+  return std::nullopt;
+}
+
+long long nowTimestampMs() {
+  return static_cast<long long>(
+    std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::system_clock::now().time_since_epoch()).count());
+}
+
 std::optional<json> extractVideoResolution(const json & payload) {
   if (!payload.is_object()) {
     return std::nullopt;
@@ -371,6 +468,308 @@ class RuntimeState {
   std::chrono::steady_clock::time_point startTime_ = std::chrono::steady_clock::now();
 };
 
+class InferenceRuntime {
+ public:
+  struct Options {
+    bool enableDarkhelp = true;
+    double threshold = 0.25;
+    int mjpegQuality = 80;
+    bool loopVideoFiles = true;
+    std::string defaultVideoSource;
+    std::string modelCfg;
+    std::string modelWeights;
+    std::string modelNames;
+  };
+
+  explicit InferenceRuntime(Options options)
+      : options_(std::move(options)) {}
+
+  ~InferenceRuntime() {
+    stopSession();
+  }
+
+  void startSession(const json & payload) {
+    stopSession();
+
+    std::string source = options_.defaultVideoSource;
+    const auto sourceFromPayload = extractVideoSource(payload);
+    if (sourceFromPayload.has_value()) {
+      source = sourceFromPayload.value();
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      activeVideoSource_ = source;
+      lastError_.clear();
+      latestDetection_ = json::object();
+      latestFrameBytes_.clear();
+      processedFrames_ = 0;
+      selectedMode_ = "replay";
+    }
+
+#ifdef SIDECAR_HAS_DARKHELP
+    if (!options_.enableDarkhelp) {
+      setError("DarkHelp inference disabled by SIDECAR_ENABLE_DARKHELP=false.");
+      return;
+    }
+
+    if (options_.modelCfg.empty() || options_.modelWeights.empty()) {
+      setError("DarkHelp model is not configured (missing SIDECAR_DARKHELP_CFG or SIDECAR_DARKHELP_WEIGHTS).");
+      return;
+    }
+
+    if (source.empty()) {
+      setError("No video source configured for DarkHelp (SIDECAR_VIDEO_SOURCE or session payload video source).");
+      return;
+    }
+
+    try {
+      if (!fs::exists(options_.modelCfg) || !fs::is_regular_file(options_.modelCfg)) {
+        setError("DarkHelp cfg file does not exist: " + options_.modelCfg);
+        return;
+      }
+
+      if (!fs::exists(options_.modelWeights) || !fs::is_regular_file(options_.modelWeights)) {
+        setError("DarkHelp weights file does not exist: " + options_.modelWeights);
+        return;
+      }
+
+      if (!options_.modelNames.empty()
+        && (!fs::exists(options_.modelNames) || !fs::is_regular_file(options_.modelNames))) {
+        setError("DarkHelp names file does not exist: " + options_.modelNames);
+        return;
+      }
+    } catch (const std::exception & error) {
+      setError(std::string("Failed to validate DarkHelp model files: ") + error.what());
+      return;
+    }
+
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      stopRequested_ = false;
+      workerRunning_ = true;
+      selectedMode_ = "darkhelp";
+    }
+    workerThread_ = std::thread(&InferenceRuntime::runDarkhelpLoop, this, source);
+#else
+    (void) payload;
+    setError("DarkHelp support is not compiled in this sidecar build.");
+#endif
+  }
+
+  void stopSession() {
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      stopRequested_ = true;
+    }
+
+    if (workerThread_.joinable()) {
+      workerThread_.join();
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    workerRunning_ = false;
+    stopRequested_ = false;
+    selectedMode_ = "replay";
+  }
+
+  std::optional<json> latestDetection() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (latestDetection_.empty()) {
+      return std::nullopt;
+    }
+
+    return latestDetection_;
+  }
+
+  std::vector<unsigned char> latestFrameBytes() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return latestFrameBytes_;
+  }
+
+  json toJson() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    json body = {
+      {"mode", selectedMode_},
+      {"darkhelp_enabled", options_.enableDarkhelp},
+      {"darkhelp_compiled", darkhelpCompiled()},
+      {"darkhelp_worker_running", workerRunning_},
+      {"threshold", options_.threshold},
+      {"model_cfg", options_.modelCfg},
+      {"model_weights", options_.modelWeights},
+      {"model_names", options_.modelNames},
+      {"video_source", activeVideoSource_},
+      {"latest_frame_available", !latestFrameBytes_.empty()},
+      {"latest_detection_available", !latestDetection_.empty()},
+      {"processed_frames", processedFrames_},
+      {"last_error", lastError_}
+    };
+    return body;
+  }
+
+ private:
+  static bool darkhelpCompiled() {
+#ifdef SIDECAR_HAS_DARKHELP
+    return true;
+#else
+    return false;
+#endif
+  }
+
+  void setError(const std::string & message) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    lastError_ = message;
+  }
+
+#ifdef SIDECAR_HAS_DARKHELP
+  static double clamp01(double value) {
+    return std::max(0.0, std::min(1.0, value));
+  }
+
+  bool openVideoCapture(const std::string & source, cv::VideoCapture & capture, std::string & error) {
+    if (isDigitsOnly(source)) {
+      try {
+        if (capture.open(std::stoi(source))) {
+          return true;
+        }
+      } catch (const std::exception &) {
+      }
+    }
+
+    if (source.find('!') != std::string::npos && capture.open(source, cv::CAP_GSTREAMER)) {
+      return true;
+    }
+
+    if (capture.open(source)) {
+      return true;
+    }
+
+    error = "Failed to open video source '" + source + "'";
+    return false;
+  }
+
+  void runDarkhelpLoop(const std::string source) {
+    bool stoppedByRequest = false;
+
+    try {
+      DarkHelp::NN network(options_.modelCfg, options_.modelWeights, options_.modelNames);
+      network.config.threshold = static_cast<float>(options_.threshold);
+      network.config.names_include_percentage = false;
+      network.config.annotation_include_duration = false;
+      network.config.annotation_include_timestamp = false;
+
+      cv::VideoCapture capture;
+      std::string openError;
+      if (!openVideoCapture(source, capture, openError)) {
+        throw std::runtime_error(openError);
+      }
+
+      capture.set(cv::CAP_PROP_BUFFERSIZE, 1.0);
+
+      bool isFileSource = false;
+      try {
+        isFileSource = fs::exists(source) && fs::is_regular_file(source);
+      } catch (const std::exception &) {
+        isFileSource = false;
+      }
+
+      while (capture.isOpened()) {
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+          if (stopRequested_) {
+            stoppedByRequest = true;
+            break;
+          }
+        }
+
+        cv::Mat frame;
+        if (!capture.read(frame) || frame.empty()) {
+          if (options_.loopVideoFiles && isFileSource && capture.set(cv::CAP_PROP_POS_FRAMES, 0.0)) {
+            continue;
+          }
+          throw std::runtime_error("Video source ended or frame read failed for '" + source + "'.");
+        }
+
+        const DarkHelp::PredictionResults predictions = network.predict(frame);
+        json objects = json::array();
+        for (const auto & prediction : predictions) {
+          std::string className = prediction.name;
+          if (className.empty() && prediction.best_class >= 0) {
+            className = "class-" + std::to_string(prediction.best_class);
+          }
+          if (className.empty()) {
+            className = "object";
+          }
+
+          objects.push_back({
+            {"name", className},
+            {"class_id", prediction.best_class},
+            {"confidence", prediction.best_probability},
+            {"relative_coordinates", {
+              {"center_x", clamp01(prediction.original_point.x)},
+              {"center_y", clamp01(prediction.original_point.y)},
+              {"width", clamp01(prediction.original_size.width)},
+              {"height", clamp01(prediction.original_size.height)}
+            }},
+            {"bbox", {
+              {"x", prediction.rect.x},
+              {"y", prediction.rect.y},
+              {"w", prediction.rect.width},
+              {"h", prediction.rect.height}
+            }}
+          });
+        }
+
+        std::vector<unsigned char> encodedJpeg;
+        const std::vector<int> encodeParameters = {
+          cv::IMWRITE_JPEG_QUALITY,
+          options_.mjpegQuality
+        };
+        (void) cv::imencode(".jpg", frame, encodedJpeg, encodeParameters);
+
+        const long long timestampMs = nowTimestampMs();
+        std::lock_guard<std::mutex> lock(mutex_);
+        processedFrames_ += 1;
+        latestDetection_ = {
+          {"frame_id", processedFrames_},
+          {"timestamp_ms", timestampMs},
+          {"session_started", true},
+          {"video_resolution", {
+            {"w", frame.cols},
+            {"h", frame.rows}
+          }},
+          {"objects", objects},
+          {"source", "inference-sidecar-darkhelp"},
+          {"video_source", source}
+        };
+        latestFrameBytes_ = std::move(encodedJpeg);
+        lastError_.clear();
+      }
+    } catch (const std::exception & error) {
+      setError(error.what());
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    workerRunning_ = false;
+    if (!stoppedByRequest && selectedMode_ == "darkhelp") {
+      selectedMode_ = "replay";
+    }
+  }
+#endif
+
+  Options options_;
+  mutable std::mutex mutex_;
+  std::thread workerThread_;
+  bool stopRequested_ = false;
+  bool workerRunning_ = false;
+  long long processedFrames_ = 0;
+  std::string selectedMode_ = "replay";
+  std::string activeVideoSource_;
+  std::string lastError_;
+  json latestDetection_ = json::object();
+  std::vector<unsigned char> latestFrameBytes_;
+};
+
 json parseOrEmptyObject(const std::string & body) {
   if (body.empty()) {
     return json::object();
@@ -390,6 +789,12 @@ int main() {
   const std::string darknetCommit = getEnvOrDefault("DARKNET_COMMIT", "");
   const std::string darkhelpCommit = getEnvOrDefault("DARKHELP_COMMIT", "");
   const std::string sidecarVersion = getEnvOrDefault("SIDECAR_VERSION", "0.1.0");
+  const bool enableDarkhelp = getBoolOrDefault("SIDECAR_ENABLE_DARKHELP", true);
+  const double darkhelpThreshold = std::max(0.0, std::min(1.0,
+    getDoubleOrDefault("SIDECAR_DARKHELP_THRESHOLD", 0.25)));
+  const std::string defaultVideoSource = getEnvOrDefault("SIDECAR_VIDEO_SOURCE", "");
+  const bool loopVideoFiles = getBoolOrDefault("SIDECAR_VIDEO_LOOP", true);
+  const int mjpegQuality = std::max(1, std::min(100, getPositiveIntOrDefault("SIDECAR_MJPEG_QUALITY", 80)));
   const int detectionsIntervalMs = getPositiveIntOrDefault("DETECTIONS_STREAM_INTERVAL_MS", 200);
   const int defaultVideoWidth = getPositiveIntOrDefault("SIDECAR_DEFAULT_VIDEO_WIDTH", 1280);
   const int defaultVideoHeight = getPositiveIntOrDefault("SIDECAR_DEFAULT_VIDEO_HEIGHT", 720);
@@ -426,9 +831,60 @@ int main() {
   const std::string configuredMjpegFramePath = getEnvOrDefault("SIDECAR_MJPEG_SAMPLE_FRAME", "");
   const std::string mjpegFramePath = resolveMjpegFramePath(configuredMjpegFramePath);
   const std::vector<unsigned char> mjpegFrameBytes = loadBinaryFile(mjpegFramePath);
-  const bool hasMjpegFrames = !replayFrameBytes.empty() || !mjpegFrameBytes.empty();
+  const bool hasMjpegFallbackFrames = !replayFrameBytes.empty() || !mjpegFrameBytes.empty();
+
+  const std::string configuredDarkhelpCfgPath = getEnvOrDefault("SIDECAR_DARKHELP_CFG", "");
+  const std::string configuredDarkhelpWeightsPath = getEnvOrDefault("SIDECAR_DARKHELP_WEIGHTS", "");
+  const std::string configuredDarkhelpNamesPath = getEnvOrDefault("SIDECAR_DARKHELP_NAMES", "");
+  const std::string darkhelpCfgPath = resolveExistingPath(
+    configuredDarkhelpCfgPath,
+    {
+      "/opt/src/darknet/cfg/yolov4-tiny.cfg",
+      "/opt/src/darknet/cfg/yolov4.cfg",
+      "cfg/yolov4-tiny.cfg",
+      "cfg/yolov4.cfg",
+    },
+    false
+  );
+  const std::string darkhelpWeightsPath = resolveExistingPath(
+    configuredDarkhelpWeightsPath,
+    {
+      "/opt/models/yolov4-tiny.weights",
+      "/opt/models/yolov4.weights",
+      "yolov4-tiny.weights",
+      "yolov4.weights",
+    },
+    false
+  );
+  const std::string darkhelpNamesPath = resolveExistingPath(
+    configuredDarkhelpNamesPath,
+    {
+      "/opt/src/darknet/data/coco.names",
+      "/opt/src/darknet/cfg/coco.names",
+      "data/coco.names",
+      "cfg/coco.names",
+    },
+    false
+  );
+
+#ifdef SIDECAR_HAS_DARKHELP
+  const bool darkhelpCompiled = true;
+#else
+  const bool darkhelpCompiled = false;
+#endif
+  const bool hasMjpegSources = hasMjpegFallbackFrames || (enableDarkhelp && darkhelpCompiled);
 
   RuntimeState state(defaultVideoWidth, defaultVideoHeight);
+  InferenceRuntime::Options inferenceOptions;
+  inferenceOptions.enableDarkhelp = enableDarkhelp;
+  inferenceOptions.threshold = darkhelpThreshold;
+  inferenceOptions.mjpegQuality = mjpegQuality;
+  inferenceOptions.loopVideoFiles = loopVideoFiles;
+  inferenceOptions.defaultVideoSource = defaultVideoSource;
+  inferenceOptions.modelCfg = darkhelpCfgPath;
+  inferenceOptions.modelWeights = darkhelpWeightsPath;
+  inferenceOptions.modelNames = darkhelpNamesPath;
+  InferenceRuntime inferenceRuntime(inferenceOptions);
   httplib::Server server;
 
   server.Get("/healthz", [&](const httplib::Request &, httplib::Response & res) {
@@ -448,12 +904,13 @@ int main() {
       {"darknet_ref", darknetRef},
       {"darknet_commit", darknetCommit},
       {"darkhelp_commit", darkhelpCommit},
-      {"mjpeg_available", hasMjpegFrames},
+      {"mjpeg_available", hasMjpegSources},
       {"mjpeg_frame_path", mjpegFramePath},
       {"replay_frames_dir", replayFramesDir},
       {"replay_frames_count", replayFramePaths.size()},
       {"replay_detections_path", replayDetectionsPath},
-      {"replay_detections_count", replayDetections.size()}
+      {"replay_detections_count", replayDetections.size()},
+      {"inference", inferenceRuntime.toJson()}
     };
     res.set_content(body.dump(), "application/json");
   });
@@ -461,10 +918,12 @@ int main() {
   server.Post("/api/v1/runtime/session/start", [&](const httplib::Request & req, httplib::Response & res) {
     const json payload = parseOrEmptyObject(req.body);
     state.start(payload, resetFrameCounterOnStart);
+    inferenceRuntime.startSession(payload);
 
     json body = {
       {"status", "starting"},
-      {"session", state.toJson()}
+      {"session", state.toJson()},
+      {"inference", inferenceRuntime.toJson()}
     };
     res.status = 202;
     res.set_content(body.dump(), "application/json");
@@ -472,9 +931,11 @@ int main() {
 
   server.Post("/api/v1/runtime/session/stop", [&](const httplib::Request &, httplib::Response & res) {
     state.stop();
+    inferenceRuntime.stopSession();
     json body = {
       {"status", "stopped"},
-      {"session", state.toJson()}
+      {"session", state.toJson()},
+      {"inference", inferenceRuntime.toJson()}
     };
     res.set_content(body.dump(), "application/json");
   });
@@ -482,7 +943,8 @@ int main() {
   server.Get("/api/v1/runtime/session/status", [&](const httplib::Request &, httplib::Response & res) {
     json body = {
       {"status", "ok"},
-      {"session", state.toJson()}
+      {"session", state.toJson()},
+      {"inference", inferenceRuntime.toJson()}
     };
     res.set_content(body.dump(), "application/json");
   });
@@ -503,7 +965,36 @@ int main() {
           && detection["session_started"].is_boolean()
           && detection["session_started"].get<bool>();
 
-        if (sessionStarted && !replayDetections.empty()) {
+        bool usedLiveInference = false;
+        if (sessionStarted) {
+          const auto liveDetection = inferenceRuntime.latestDetection();
+          if (liveDetection.has_value()) {
+            const auto & live = liveDetection.value();
+            if (live.contains("objects")) {
+              detection["objects"] = live["objects"];
+            }
+
+            if (live.contains("source")) {
+              detection["source"] = live["source"];
+            }
+
+            if (live.contains("video_resolution")) {
+              detection["video_resolution"] = live["video_resolution"];
+            }
+
+            if (live.contains("video_source")) {
+              detection["video_source"] = live["video_source"];
+            }
+
+            if (live.contains("frame_id")) {
+              detection["inference_frame_id"] = live["frame_id"];
+            }
+
+            usedLiveInference = true;
+          }
+        }
+
+        if (!usedLiveInference && sessionStarted && !replayDetections.empty()) {
           if (detectionCursor >= replayDetections.size()) {
             detectionCursor = replayLoop ? 0 : replayDetections.size() - 1;
           }
@@ -533,10 +1024,10 @@ int main() {
   });
 
   server.Get("/api/v1/stream/mjpeg", [&](const httplib::Request &, httplib::Response & res) {
-    if (!hasMjpegFrames) {
+    if (!hasMjpegSources) {
       json body = {
         {"status", "not_available"},
-        {"message", "No sample MJPEG frame found for sidecar stream endpoint."}
+        {"message", "No MJPEG source available. Configure fallback frames or DarkHelp inference."}
       };
       res.status = 503;
       res.set_content(body.dump(), "application/json");
@@ -556,8 +1047,11 @@ int main() {
           return false;
         }
 
+        const std::vector<unsigned char> liveFrameBytes = inferenceRuntime.latestFrameBytes();
         const std::vector<unsigned char> * frameBytes = nullptr;
-        if (!replayFrameBytes.empty()) {
+        if (!liveFrameBytes.empty()) {
+          frameBytes = &liveFrameBytes;
+        } else if (!replayFrameBytes.empty()) {
           if (frameCursor >= replayFrameBytes.size()) {
             frameCursor = replayLoop ? 0 : replayFrameBytes.size() - 1;
           }
@@ -568,6 +1062,11 @@ int main() {
           }
         } else {
           frameBytes = &mjpegFrameBytes;
+        }
+
+        if (frameBytes == nullptr || frameBytes->empty()) {
+          std::this_thread::sleep_for(std::chrono::milliseconds(mjpegIntervalMs));
+          return true;
         }
 
         const std::string frameHeader = "--" + mjpegBoundary + "\r\n"
