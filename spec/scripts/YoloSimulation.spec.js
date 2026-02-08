@@ -1,12 +1,34 @@
 const path = require('path');
+const net = require('net');
 
 const { YoloSimulation } = require('../../scripts/YoloSimulation');
+
+function getAvailablePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.on('error', (error) => reject(error));
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(port);
+      });
+    });
+  });
+}
 
 describe('YoloSimulation', () => {
   let yolo = null;
   let yoloConfig = null;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    const jsonStreamPort = await getAvailablePort();
+    const mjpegStreamPort = await getAvailablePort();
+
     yoloConfig = {
       yoloParams: {
         data: 'cfg/coco.data',
@@ -21,16 +43,18 @@ describe('YoloSimulation', () => {
         jsonFps: 20,
         mjpgFps: 0.2,
       },
-      jsonStreamPort: 8070,
-      mjpegStreamPort: 8090,
+      jsonStreamPort,
+      mjpegStreamPort,
       darknetPath: './spec/scripts/',
       simulationStartupDelayMs: 0,
     };
     yolo = new YoloSimulation(yoloConfig);
   });
 
-  afterEach(() => {
-    yolo.stop();
+  afterEach(async () => {
+    if (yolo) {
+      await yolo.stop();
+    }
   });
 
   describe('videoResolution', () => {
