@@ -5,6 +5,8 @@ services:
     runtime: nvidia
     image: opendatacam/opendatacam:v3.0.2-desktop
     privileged: true
+    environment:
+      - INFERENCE_SIDECAR_URL=http://inference-sidecar:9080
     volumes:
       - './config.json:/var/local/opendatacam/config.json'
     ports:
