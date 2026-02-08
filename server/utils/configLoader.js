@@ -16,6 +16,27 @@ const DEFAULT_NEURAL_NETWORK_PARAMS = {
   },
 };
 
+const DEFAULT_PATHFINDER_COLORS = [
+  '#1f77b4',
+  '#ff7f0e',
+  '#2ca02c',
+  '#d62728',
+  '#9467bd',
+  '#8c564b',
+  '#e377c2',
+  '#7f7f7f',
+  '#bcbd22',
+  '#17becf',
+];
+
+const DEFAULT_COUNTER_COLORS = {
+  yellow: '#FFE700',
+  turquoise: '#A3FFF4',
+  green: '#a0f17f',
+  purple: '#d070f0',
+  red: '#AB4435',
+};
+
 const DEFAULT_GPS = {
   enabled: false,
   port: 2947,
@@ -23,6 +44,24 @@ const DEFAULT_GPS = {
   signalLossTimeoutSeconds: 60,
   csvExportOpenStreetMapsUrl: true,
 };
+
+function resolvePathfinderColors(v4Config) {
+  const configured = (v4Config.ui && v4Config.ui.pathfinder_colors) || [];
+  if (Array.isArray(configured) && configured.length > 0) {
+    return configured;
+  }
+
+  return DEFAULT_PATHFINDER_COLORS;
+}
+
+function resolveCounterColors(v4Config) {
+  const configured = (v4Config.ui && v4Config.ui.counter_colors) || {};
+  if (configured && typeof configured === 'object' && Object.keys(configured).length > 0) {
+    return configured;
+  }
+
+  return DEFAULT_COUNTER_COLORS;
+}
 
 let cachedPath = null;
 let cachedConfig = null;
@@ -48,8 +87,8 @@ function toLegacyConfig(v4Config) {
     COUNTER_SETTINGS: v4Config.counting.settings || {},
     VALID_CLASSES: v4Config.app.valid_classes || [],
     DISPLAY_CLASSES: v4Config.app.display_classes || [],
-    PATHFINDER_COLORS: (v4Config.ui && v4Config.ui.pathfinder_colors) || [],
-    COUNTER_COLORS: (v4Config.ui && v4Config.ui.counter_colors) || {},
+    PATHFINDER_COLORS: resolvePathfinderColors(v4Config),
+    COUNTER_COLORS: resolveCounterColors(v4Config),
     NEURAL_NETWORK_PARAMS: (v4Config.inference && v4Config.inference.neural_network_params)
       || DEFAULT_NEURAL_NETWORK_PARAMS,
     TRACKER_ACCURACY_DISPLAY: (v4Config.ui && v4Config.ui.tracker_accuracy_display) || {},

@@ -9,6 +9,27 @@ const defaultOutput = path.resolve(process.cwd(), 'config.v4.json');
 const input = process.argv[2] ? path.resolve(process.argv[2]) : defaultInput;
 const output = process.argv[3] ? path.resolve(process.argv[3]) : defaultOutput;
 
+const DEFAULT_PATHFINDER_COLORS = [
+  '#1f77b4',
+  '#ff7f0e',
+  '#2ca02c',
+  '#d62728',
+  '#9467bd',
+  '#8c564b',
+  '#e377c2',
+  '#7f7f7f',
+  '#bcbd22',
+  '#17becf',
+];
+
+const DEFAULT_COUNTER_COLORS = {
+  yellow: '#FFE700',
+  turquoise: '#A3FFF4',
+  green: '#a0f17f',
+  purple: '#d070f0',
+  red: '#AB4435',
+};
+
 function readJSON(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
 }
@@ -85,6 +106,15 @@ function toV4(v3) {
   const ports = v3.PORTS || {};
   const sidecarRuntime = inferSidecarRuntime(v3);
 
+  const configuredCounterColors = v3.COUNTER_COLORS || {};
+  const configuredPathfinderColors = v3.PATHFINDER_COLORS || [];
+  const counterColors = Object.keys(configuredCounterColors).length > 0
+    ? configuredCounterColors
+    : DEFAULT_COUNTER_COLORS;
+  const pathfinderColors = configuredPathfinderColors.length > 0
+    ? configuredPathfinderColors
+    : DEFAULT_PATHFINDER_COLORS;
+
   return {
     schema_version: 4,
     app: {
@@ -125,8 +155,8 @@ function toV4(v3) {
     },
     ui: {
       tracker_accuracy_display: v3.TRACKER_ACCURACY_DISPLAY || {},
-      counter_colors: v3.COUNTER_COLORS || {},
-      pathfinder_colors: v3.PATHFINDER_COLORS || []
+      counter_colors: counterColors,
+      pathfinder_colors: pathfinderColors
     }
   };
 }

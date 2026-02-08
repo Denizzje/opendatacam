@@ -99,6 +99,14 @@ const initialState = {
 
 let Opendatacam = cloneDeep(initialState);
 
+const isValidResolution = (resolution) => (
+  resolution
+  && Number.isFinite(resolution.w)
+  && Number.isFinite(resolution.h)
+  && resolution.w > 0
+  && resolution.h > 0
+);
+
 module.exports = {
 
   reset() {
@@ -130,19 +138,24 @@ module.exports = {
     }
   */
   registerCountingAreas(countingAreas) {
+    const sanitizedCountingAreas = countingAreas && typeof countingAreas === 'object'
+      ? countingAreas
+      : {};
+
     // Reset existing
     Opendatacam.countingAreas = {};
+    Opendatacam.counterSummary = {};
     if (Opendatacam.database !== null) {
       Opendatacam.database.persistAppSettings({
-        countingAreas,
+        countingAreas: sanitizedCountingAreas,
       }).catch((error) => {
         console.warn('Failed to persist counting areas');
         console.warn(error && error.message ? error.message : error);
       });
     }
-    Object.keys(countingAreas).map((countingAreaKey) => {
-      if (countingAreas[countingAreaKey]) {
-        this.registerSingleCountingArea(countingAreaKey, countingAreas[countingAreaKey]);
+    Object.keys(sanitizedCountingAreas).forEach((countingAreaKey) => {
+      if (sanitizedCountingAreas[countingAreaKey]) {
+        this.registerSingleCountingArea(countingAreaKey, sanitizedCountingAreas[countingAreaKey]);
         // Set each counting area to 0
         Opendatacam.counterSummary[countingAreaKey] = { _total: 0 };
       }
@@ -153,11 +166,35 @@ module.exports = {
     // Remap coordinates to image reference size
     // The editor canvas can be smaller / bigger
 
+    const fallbackComputed = data && data.computed ? data.computed : null;
+    const location = data && data.location ? data.location : {};
+    const locationPoints = Array.isArray(location.points) ? location.points : [];
+    if (locationPoints.length < 2) {
+      console.warn(`Skipping counting area "${key}" because it does not have at least 2 points`);
+      Opendatacam.countingAreas[key] = data || {};
+      Opendatacam.countingAreas[key].computed = fallbackComputed;
+      return;
+    }
+
+    const targetResolution = isValidResolution(Opendatacam.videoResolution)
+      ? Opendatacam.videoResolution
+      : location.refResolution;
+    const sourceResolution = isValidResolution(location.refResolution)
+      ? location.refResolution
+      : targetResolution;
+
+    if (!isValidResolution(targetResolution) || !isValidResolution(sourceResolution)) {
+      console.warn(`Skipping counting area "${key}" remap because resolution is unavailable`);
+      Opendatacam.countingAreas[key] = data || {};
+      Opendatacam.countingAreas[key].computed = fallbackComputed;
+      return;
+    }
+
     // NOTE: We need to invert the Y coordinates to be in a classic Cartesian coordinate system
     // The coordinates in inputs are from the canvas coordinates system
-    const points = data.location.points.map((point) => ({
-      x: point.x * Opendatacam.videoResolution.w / data.location.refResolution.w,
-      y: -(point.y * Opendatacam.videoResolution.h / data.location.refResolution.h),
+    const points = locationPoints.map((point) => ({
+      x: point.x * targetResolution.w / sourceResolution.w,
+      y: -(point.y * targetResolution.h / sourceResolution.h),
     }));
 
     // Compute bearing
@@ -186,6 +223,14 @@ module.exports = {
       },
       points,
     };
+  },
+
+  recomputeCountingAreasForCurrentResolution() {
+    Object.keys(Opendatacam.countingAreas).forEach((countingAreaKey) => {
+      if (Opendatacam.countingAreas[countingAreaKey]) {
+        this.registerSingleCountingArea(countingAreaKey, Opendatacam.countingAreas[countingAreaKey]);
+      }
+    });
   },
 
   countItem(trackedItem, countingAreaKey, frameId, countingDirection, angleWithCountingLine) {
@@ -793,11 +838,7 @@ module.exports = {
   },
 
   setVideoResolution(videoResolution) {
-    if (!videoResolution
-      || !Number.isFinite(videoResolution.w)
-      || !Number.isFinite(videoResolution.h)
-      || videoResolution.w <= 0
-      || videoResolution.h <= 0) {
+    if (!isValidResolution(videoResolution)) {
       return;
     }
 
@@ -815,6 +856,7 @@ module.exports = {
       w: videoResolution.w,
       h: videoResolution.h,
     };
+    this.recomputeCountingAreasForCurrentResolution();
 
     // Restore counting areas if defined
     if (Opendatacam.database !== null) {

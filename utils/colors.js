@@ -21,7 +21,12 @@ export function getAvailableCounterColors() {
 }
 
 export function getDefaultCounterColor() {
-  return Object.keys(window.CONFIG.COUNTER_COLORS[getAvailableCounterColors()[0]]);
+  const availableColors = getAvailableCounterColors();
+  if (availableColors.length > 0) {
+    return availableColors[0];
+  }
+
+  return null;
 }
 
 export function getPathfinderColors() {

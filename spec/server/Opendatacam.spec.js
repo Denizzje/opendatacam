@@ -17,7 +17,7 @@ describe('Opendatacam', () => {
       iouLimit: 0.05,
       unMatchedFrameTolerance: 5,
       fastDelete: true,
-      matchingAlgorithm: "kdTree",
+      matchingAlgorithm: 'kdTree',
     };
     testConfig.COUNTER_SETTINGS = {
       countingAreaMinFramesInsideToBeCounted: 1,
@@ -133,6 +133,51 @@ describe('Opendatacam', () => {
 
       expect(() => {
         Opendatacam.setVideoResolution({ w: 640, h: 480 });
+      }).not.toThrow();
+    });
+
+    it('recomputes counting areas when the resolution changes', () => {
+      Opendatacam.registerCountingAreas({
+        test: {
+          color: 'yellow',
+          type: 'bidirectional',
+          location: {
+            points: [
+              { x: 10, y: 20 },
+              { x: 90, y: 20 },
+            ],
+            refResolution: { w: 100, h: 100 },
+          },
+          name: 'test',
+        },
+      });
+
+      Opendatacam.setVideoResolution({ w: 200, h: 100 });
+
+      const countingArea = Opendatacam.getCountingAreas().test;
+      expect(countingArea.computed.point1.x).toEqual(20);
+      expect(countingArea.computed.point2.x).toEqual(180);
+      expect(countingArea.computed.point1.y).toEqual(-20);
+      expect(countingArea.computed.point2.y).toEqual(-20);
+    });
+  });
+
+  describe('counting area registration', () => {
+    it('does not throw when refResolution is missing', () => {
+      expect(() => {
+        Opendatacam.registerCountingAreas({
+          test: {
+            color: 'yellow',
+            type: 'bidirectional',
+            location: {
+              points: [
+                { x: 100, y: 100 },
+                { x: 200, y: 100 },
+              ],
+            },
+            name: 'test',
+          },
+        });
       }).not.toThrow();
     });
   });

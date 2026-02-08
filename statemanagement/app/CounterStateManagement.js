@@ -150,7 +150,7 @@ export function addCountingArea(type = 'bidirectional') {
     /* eslint-enable */
 
     if (!color) {
-      color = DEFAULT_COLOR;
+      color = DEFAULT_COLOR || 'fallback';
     }
 
     dispatch({
