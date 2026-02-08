@@ -13,8 +13,77 @@ function readJSON(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
 }
 
+function resolveModelPath(basePath, candidatePath) {
+  if (!candidatePath || typeof candidatePath !== 'string') {
+    return '';
+  }
+
+  if (path.isAbsolute(candidatePath)) {
+    return candidatePath;
+  }
+
+  return path.join(basePath, candidatePath);
+}
+
+function inferVideoSource(v3) {
+  const inputType = v3.VIDEO_INPUT;
+  const inputs = v3.VIDEO_INPUTS_PARAMS || {};
+  const configuredSource = inputs[inputType];
+
+  if (typeof configuredSource !== 'string' || configuredSource.length === 0) {
+    return '';
+  }
+
+  // Legacy simulation input uses CLI args for the old process and is not a sidecar video source.
+  if (inputType === 'simulation') {
+    return '';
+  }
+
+  return configuredSource;
+}
+
+function inferSidecarRuntime(v3) {
+  const runtime = {
+    darkhelp_enabled: true,
+    darkhelp_threshold: 0.25,
+    video_loop: true,
+    mjpeg_quality: 80,
+  };
+
+  const darknetPath = v3.PATH_TO_YOLO_DARKNET || '/var/local/darknet';
+  const networkName = v3.NEURAL_NETWORK;
+  const networkParams = (
+    v3.NEURAL_NETWORK_PARAMS
+    && networkName
+    && v3.NEURAL_NETWORK_PARAMS[networkName]
+  ) || {};
+
+  const cfgPath = resolveModelPath(darknetPath, networkParams.cfg);
+  if (cfgPath) {
+    runtime.darkhelp_cfg = cfgPath;
+  }
+
+  const weightsPath = resolveModelPath(darknetPath, networkParams.weights);
+  if (weightsPath) {
+    runtime.darkhelp_weights = weightsPath;
+  }
+
+  const namesPath = resolveModelPath(darknetPath, networkParams.names || 'cfg/coco.names');
+  if (namesPath) {
+    runtime.darkhelp_names = namesPath;
+  }
+
+  const videoSource = inferVideoSource(v3);
+  if (videoSource) {
+    runtime.video_source = videoSource;
+  }
+
+  return runtime;
+}
+
 function toV4(v3) {
   const ports = v3.PORTS || {};
+  const sidecarRuntime = inferSidecarRuntime(v3);
 
   return {
     schema_version: 4,
@@ -30,7 +99,8 @@ function toV4(v3) {
       darknet_commit: '',
       darkhelp_commit: '',
       sidecar: {
-        base_url: process.env.INFERENCE_SIDECAR_URL || 'http://localhost:9080'
+        base_url: process.env.INFERENCE_SIDECAR_URL || 'http://localhost:9080',
+        runtime: sidecarRuntime,
       }
     },
     video: {

@@ -21,6 +21,14 @@ describe('configLoader', () => {
         darknet_ref: 'master',
         darknet_commit: 'abc123',
         darkhelp_commit: 'def456',
+        sidecar: {
+          base_url: 'http://inference-sidecar:9080',
+          runtime: {
+            darkhelp_cfg: '/models/model.cfg',
+            darkhelp_weights: '/models/model.weights',
+            video_source: '/videos/demo.mp4',
+          },
+        },
       },
       video: {
         input: 'file',
@@ -62,6 +70,8 @@ describe('configLoader', () => {
     expect(v3.PORTS.darknet_mjpeg_stream).toBe(8090);
     expect(v3.DATABASE).toBe('mongo');
     expect(v3.inference.darknet_commit).toBe('abc123');
+    expect(v3.inference.sidecar.runtime.darkhelp_cfg).toBe('/models/model.cfg');
+    expect(v3.inference.sidecar.runtime.video_source).toBe('/videos/demo.mp4');
   });
 
   it('keeps v3 config unmodified when parsed from file', () => {
@@ -98,6 +108,12 @@ describe('configLoader', () => {
         darknet_ref: 'master',
         darknet_commit: '',
         darkhelp_commit: '',
+        sidecar: {
+          base_url: 'http://inference-sidecar:9080',
+          runtime: {
+            darkhelp_enabled: true,
+          },
+        },
       },
       video: {
         input: 'file',
@@ -127,5 +143,6 @@ describe('configLoader', () => {
     expect(parsed.OPENDATACAM_VERSION).toBe('4.0.0');
     expect(parsed.PORTS.darknet_json_stream).toBe(8070);
     expect(parsed.PORTS.darknet_mjpeg_stream).toBe(8090);
+    expect(parsed.inference.sidecar.runtime.darkhelp_enabled).toBe(true);
   });
 });

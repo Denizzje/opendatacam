@@ -24,8 +24,18 @@ services:
     restart: always
     environment:
       - SIDECAR_PORT=9080
-      - SIDECAR_EMIT_DEMO_DETECTIONS=true
+      - SIDECAR_ENABLE_DARKHELP=true
+      - SIDECAR_DARKHELP_CFG=/opt/models/model.cfg
+      - SIDECAR_DARKHELP_WEIGHTS=/opt/models/model.weights
+      - SIDECAR_DARKHELP_NAMES=/opt/models/model.names
+      - SIDECAR_VIDEO_SOURCE=/opt/video/input.mp4
+      - SIDECAR_VIDEO_LOOP=true
+      - SIDECAR_EMIT_DEMO_DETECTIONS=false
       - MJPEG_STREAM_INTERVAL_MS=100
+      - SIDECAR_MJPEG_QUALITY=80
+    volumes:
+      - './models:/opt/models:ro'
+      - './videos:/opt/video:ro'
     ports:
       - "9080:9080"
   mongo:

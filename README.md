@@ -112,7 +112,8 @@ The `development` branch now contains the first modernization scaffolding:
 - In sidecar detections mode, startup falls back to legacy runtime if sidecar session start fails
 - `/api/v2/stream/mjpeg` defaults to legacy stream for compatibility. Set `OPENDATACAM_V2_MJPEG_FALLBACK_LEGACY=false` to force sidecar MJPEG (`/api/v1/stream/mjpeg`)
 - Sidecar runtime in `services/inference-sidecar/` now supports DarkHelp live inference with replay fallback for detections + MJPEG streams
-- `docker/run/*/docker-compose.v4.yml` now runs sidecar-first (`OPENDATACAM_V2_USE_SIDECAR_DETECTIONS=true`)
+- `/api/v2/runtime/session/start` now forwards `inference.sidecar.runtime` defaults from config v4 to sidecar session payload
+- `docker/run/*/docker-compose.v4.yml` now runs sidecar-first (`OPENDATACAM_V2_USE_SIDECAR_DETECTIONS=true`) and mounts `./models` + `./videos` into sidecar runtime paths
 - Draft v4 config schema and migration helper
 - Runtime config bridge supports v4 via `OPENDATACAM_CONFIG_PATH=/path/to/config.v4.json`
 

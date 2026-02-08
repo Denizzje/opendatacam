@@ -61,7 +61,21 @@
           "additionalProperties": false,
           "required": ["base_url"],
           "properties": {
-            "base_url": { "type": "string", "minLength": 1 }
+            "base_url": { "type": "string", "minLength": 1 },
+            "runtime": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "darkhelp_enabled": { "type": "boolean" },
+                "darkhelp_cfg": { "type": "string", "minLength": 1 },
+                "darkhelp_weights": { "type": "string", "minLength": 1 },
+                "darkhelp_names": { "type": "string", "minLength": 1 },
+                "darkhelp_threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+                "video_source": { "type": "string", "minLength": 1 },
+                "video_loop": { "type": "boolean" },
+                "mjpeg_quality": { "type": "integer", "minimum": 1, "maximum": 100 }
+              }
+            }
           }
         }
       }

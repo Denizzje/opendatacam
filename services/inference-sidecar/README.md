@@ -17,6 +17,27 @@ Implemented endpoints:
 - `GET /api/v1/stream/detections` (continuous SSE payload stream, uses live DarkHelp detections when available, otherwise replay/demo)
 - `GET /api/v1/stream/mjpeg` (continuous MJPEG stream, uses live DarkHelp frames when available, otherwise replay/static fallback)
 
+## Runtime session payload overrides
+
+`POST /api/v1/runtime/session/start` accepts optional `sidecar_runtime` overrides:
+
+```json
+{
+  "sidecar_runtime": {
+    "darkhelp_enabled": true,
+    "darkhelp_cfg": "/opt/models/model.cfg",
+    "darkhelp_weights": "/opt/models/model.weights",
+    "darkhelp_names": "/opt/models/model.names",
+    "darkhelp_threshold": 0.25,
+    "video_source": "/opt/video/input.mp4",
+    "video_loop": true,
+    "mjpeg_quality": 80
+  }
+}
+```
+
+If a key is omitted, the sidecar falls back to environment defaults.
+
 ## Build locally
 
 ```bash

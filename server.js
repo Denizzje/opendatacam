@@ -31,6 +31,7 @@ const { InferenceSidecarClient } = require('./server/processes/InferenceSidecarC
 const { SidecarDetectionsStream } = require('./server/processes/SidecarDetectionsStream');
 const { normalizeSidecarFrame } = require('./server/processes/SidecarDetectionsAdapter');
 const { MongoDbManager } = require('./server/db/MongoDbManager');
+const { buildSidecarSessionPayload } = require('./server/utils/sidecarRuntimePayload');
 
 const config = loadConfig();
 
@@ -279,6 +280,7 @@ app.prepare()
 
     express.post('/api/v2/runtime/session/start', (req, res) => {
       const payload = req.body || {};
+      const sidecarSessionPayload = buildSidecarSessionPayload(config, payload);
       const urlData = getRuntimeStreamURLData(req);
 
       const prepareRuntime = useSidecarDetectionsForV2
@@ -291,7 +293,7 @@ app.prepare()
         });
 
       prepareRuntime.then(() => {
-        inferenceSidecar.startSession(payload).then((sidecarResponse) => {
+        inferenceSidecar.startSession(sidecarSessionPayload).then((sidecarResponse) => {
           if (useSidecarDetectionsForV2) {
             startSidecarDetectionsStream();
           }

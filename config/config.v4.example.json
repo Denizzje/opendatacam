@@ -19,7 +19,17 @@
     "darknet_commit": "a3df422adf773c87cc6af1dd0a577e87847ae081",
     "darkhelp_commit": "8bf10619cf10776b30ac157fca80cf0043452b40",
     "sidecar": {
-      "base_url": "http://inference-sidecar:9080"
+      "base_url": "http://inference-sidecar:9080",
+      "runtime": {
+        "darkhelp_enabled": true,
+        "darkhelp_cfg": "/opt/models/yolov4-tiny.cfg",
+        "darkhelp_weights": "/opt/models/yolov4-tiny.weights",
+        "darkhelp_names": "/opt/models/coco.names",
+        "darkhelp_threshold": 0.25,
+        "video_source": "/opt/video/demo.mp4",
+        "video_loop": true,
+        "mjpeg_quality": 80
+      }
     }
   },
   "video": {

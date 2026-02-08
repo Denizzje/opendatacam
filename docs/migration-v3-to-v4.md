@@ -23,3 +23,27 @@ node scripts/migrate-config-v3-to-v4.js ./config.json ./config.v4.json
 
 - The backend now includes a config loader bridge that can parse `schema_version: 4` and map it to the current runtime shape.
 - You can point runtime to a custom config path with `OPENDATACAM_CONFIG_PATH=/path/to/config.v4.json`.
+- `inference.sidecar.runtime` can now define sidecar session defaults (model files, threshold, video source, loop, MJPEG quality).
+- On `/api/v2/runtime/session/start`, OpenDataCam sends these runtime defaults to the sidecar, and request payload values in `sidecar_runtime` override config defaults.
+
+## Sidecar runtime block example
+
+```json
+{
+  "inference": {
+    "sidecar": {
+      "base_url": "http://inference-sidecar:9080",
+      "runtime": {
+        "darkhelp_enabled": true,
+        "darkhelp_cfg": "/opt/models/model.cfg",
+        "darkhelp_weights": "/opt/models/model.weights",
+        "darkhelp_names": "/opt/models/model.names",
+        "darkhelp_threshold": 0.25,
+        "video_source": "/opt/video/input.mp4",
+        "video_loop": true,
+        "mjpeg_quality": 80
+      }
+    }
+  }
+}
+```

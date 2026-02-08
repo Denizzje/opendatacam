@@ -275,6 +275,160 @@ std::optional<std::string> jsonStringOrNumber(const json & value) {
   return std::nullopt;
 }
 
+std::optional<bool> jsonBoolOrString(const json & value) {
+  if (value.is_boolean()) {
+    return value.get<bool>();
+  }
+
+  if (value.is_string()) {
+    const std::string text = value.get<std::string>();
+    if (text == "1" || text == "true" || text == "TRUE" || text == "yes" || text == "on") {
+      return true;
+    }
+    if (text == "0" || text == "false" || text == "FALSE" || text == "no" || text == "off") {
+      return false;
+    }
+  }
+
+  return std::nullopt;
+}
+
+std::optional<double> jsonToDouble(const json & value) {
+  if (value.is_number_float()) {
+    return value.get<double>();
+  }
+
+  if (value.is_number_integer()) {
+    return static_cast<double>(value.get<int>());
+  }
+
+  if (value.is_number_unsigned()) {
+    return static_cast<double>(value.get<unsigned int>());
+  }
+
+  if (value.is_string()) {
+    try {
+      return std::stod(value.get<std::string>());
+    } catch (const std::exception &) {
+      return std::nullopt;
+    }
+  }
+
+  return std::nullopt;
+}
+
+std::optional<int> jsonToInt(const json & value) {
+  if (value.is_number_integer()) {
+    return value.get<int>();
+  }
+
+  if (value.is_number_unsigned()) {
+    return static_cast<int>(value.get<unsigned int>());
+  }
+
+  if (value.is_string()) {
+    try {
+      return std::stoi(value.get<std::string>());
+    } catch (const std::exception &) {
+      return std::nullopt;
+    }
+  }
+
+  return std::nullopt;
+}
+
+const json * getRuntimeOverrideObject(const json & payload) {
+  if (!payload.is_object()) {
+    return nullptr;
+  }
+
+  if (payload.contains("sidecar_runtime") && payload["sidecar_runtime"].is_object()) {
+    return &payload["sidecar_runtime"];
+  }
+
+  if (payload.contains("runtime") && payload["runtime"].is_object()) {
+    return &payload["runtime"];
+  }
+
+  return nullptr;
+}
+
+std::optional<std::string> extractRuntimeString(const json & payload, const std::string & key) {
+  const json * runtime = getRuntimeOverrideObject(payload);
+  if (runtime && runtime->contains(key)) {
+    const auto extracted = jsonStringOrNumber((*runtime)[key]);
+    if (extracted.has_value()) {
+      return extracted;
+    }
+  }
+
+  if (payload.contains(key)) {
+    const auto extracted = jsonStringOrNumber(payload[key]);
+    if (extracted.has_value()) {
+      return extracted;
+    }
+  }
+
+  return std::nullopt;
+}
+
+std::optional<bool> extractRuntimeBool(const json & payload, const std::string & key) {
+  const json * runtime = getRuntimeOverrideObject(payload);
+  if (runtime && runtime->contains(key)) {
+    const auto extracted = jsonBoolOrString((*runtime)[key]);
+    if (extracted.has_value()) {
+      return extracted;
+    }
+  }
+
+  if (payload.contains(key)) {
+    const auto extracted = jsonBoolOrString(payload[key]);
+    if (extracted.has_value()) {
+      return extracted;
+    }
+  }
+
+  return std::nullopt;
+}
+
+std::optional<double> extractRuntimeDouble(const json & payload, const std::string & key) {
+  const json * runtime = getRuntimeOverrideObject(payload);
+  if (runtime && runtime->contains(key)) {
+    const auto extracted = jsonToDouble((*runtime)[key]);
+    if (extracted.has_value()) {
+      return extracted;
+    }
+  }
+
+  if (payload.contains(key)) {
+    const auto extracted = jsonToDouble(payload[key]);
+    if (extracted.has_value()) {
+      return extracted;
+    }
+  }
+
+  return std::nullopt;
+}
+
+std::optional<int> extractRuntimeInt(const json & payload, const std::string & key) {
+  const json * runtime = getRuntimeOverrideObject(payload);
+  if (runtime && runtime->contains(key)) {
+    const auto extracted = jsonToInt((*runtime)[key]);
+    if (extracted.has_value()) {
+      return extracted;
+    }
+  }
+
+  if (payload.contains(key)) {
+    const auto extracted = jsonToInt(payload[key]);
+    if (extracted.has_value()) {
+      return extracted;
+    }
+  }
+
+  return std::nullopt;
+}
+
 std::optional<std::string> extractVideoSource(const json & payload) {
   if (!payload.is_object()) {
     return std::nullopt;
@@ -297,6 +451,11 @@ std::optional<std::string> extractVideoSource(const json & payload) {
     if (extracted.has_value()) {
       return extracted;
     }
+  }
+
+  const auto runtimeVideoSource = extractRuntimeString(payload, "video_source");
+  if (runtimeVideoSource.has_value()) {
+    return runtimeVideoSource;
   }
 
   if (payload.contains("video") && payload["video"].is_object()) {
@@ -481,6 +640,17 @@ class InferenceRuntime {
     std::string modelNames;
   };
 
+  struct SessionSettings {
+    bool enableDarkhelp = true;
+    double threshold = 0.25;
+    int mjpegQuality = 80;
+    bool loopVideoFiles = true;
+    std::string videoSource;
+    std::string modelCfg;
+    std::string modelWeights;
+    std::string modelNames;
+  };
+
   explicit InferenceRuntime(Options options)
       : options_(std::move(options)) {}
 
@@ -488,18 +658,74 @@ class InferenceRuntime {
     stopSession();
   }
 
+  static SessionSettings resolveSessionSettings(const Options & options, const json & payload) {
+    SessionSettings session;
+    session.enableDarkhelp = options.enableDarkhelp;
+    session.threshold = options.threshold;
+    session.mjpegQuality = options.mjpegQuality;
+    session.loopVideoFiles = options.loopVideoFiles;
+    session.videoSource = options.defaultVideoSource;
+    session.modelCfg = options.modelCfg;
+    session.modelWeights = options.modelWeights;
+    session.modelNames = options.modelNames;
+
+    const auto darkhelpEnabled = extractRuntimeBool(payload, "darkhelp_enabled");
+    if (darkhelpEnabled.has_value()) {
+      session.enableDarkhelp = darkhelpEnabled.value();
+    }
+
+    const auto darkhelpCfg = extractRuntimeString(payload, "darkhelp_cfg");
+    if (darkhelpCfg.has_value()) {
+      session.modelCfg = darkhelpCfg.value();
+    }
+
+    const auto darkhelpWeights = extractRuntimeString(payload, "darkhelp_weights");
+    if (darkhelpWeights.has_value()) {
+      session.modelWeights = darkhelpWeights.value();
+    }
+
+    const auto darkhelpNames = extractRuntimeString(payload, "darkhelp_names");
+    if (darkhelpNames.has_value()) {
+      session.modelNames = darkhelpNames.value();
+    }
+
+    const auto threshold = extractRuntimeDouble(payload, "darkhelp_threshold");
+    if (threshold.has_value()) {
+      session.threshold = std::max(0.0, std::min(1.0, threshold.value()));
+    }
+
+    const auto videoLoop = extractRuntimeBool(payload, "video_loop");
+    if (videoLoop.has_value()) {
+      session.loopVideoFiles = videoLoop.value();
+    }
+
+    const auto mjpegQuality = extractRuntimeInt(payload, "mjpeg_quality");
+    if (mjpegQuality.has_value()) {
+      session.mjpegQuality = std::max(1, std::min(100, mjpegQuality.value()));
+    }
+
+    const auto videoSource = extractVideoSource(payload);
+    if (videoSource.has_value()) {
+      session.videoSource = videoSource.value();
+    }
+
+    return session;
+  }
+
   void startSession(const json & payload) {
     stopSession();
-
-    std::string source = options_.defaultVideoSource;
-    const auto sourceFromPayload = extractVideoSource(payload);
-    if (sourceFromPayload.has_value()) {
-      source = sourceFromPayload.value();
-    }
+    const SessionSettings session = resolveSessionSettings(options_, payload);
 
     {
       std::lock_guard<std::mutex> lock(mutex_);
-      activeVideoSource_ = source;
+      activeVideoSource_ = session.videoSource;
+      activeDarkhelpEnabled_ = session.enableDarkhelp;
+      activeThreshold_ = session.threshold;
+      activeLoopVideoFiles_ = session.loopVideoFiles;
+      activeMjpegQuality_ = session.mjpegQuality;
+      activeModelCfg_ = session.modelCfg;
+      activeModelWeights_ = session.modelWeights;
+      activeModelNames_ = session.modelNames;
       lastError_.clear();
       latestDetection_ = json::object();
       latestFrameBytes_.clear();
@@ -508,35 +734,35 @@ class InferenceRuntime {
     }
 
 #ifdef SIDECAR_HAS_DARKHELP
-    if (!options_.enableDarkhelp) {
+    if (!session.enableDarkhelp) {
       setError("DarkHelp inference disabled by SIDECAR_ENABLE_DARKHELP=false.");
       return;
     }
 
-    if (options_.modelCfg.empty() || options_.modelWeights.empty()) {
+    if (session.modelCfg.empty() || session.modelWeights.empty()) {
       setError("DarkHelp model is not configured (missing SIDECAR_DARKHELP_CFG or SIDECAR_DARKHELP_WEIGHTS).");
       return;
     }
 
-    if (source.empty()) {
+    if (session.videoSource.empty()) {
       setError("No video source configured for DarkHelp (SIDECAR_VIDEO_SOURCE or session payload video source).");
       return;
     }
 
     try {
-      if (!fs::exists(options_.modelCfg) || !fs::is_regular_file(options_.modelCfg)) {
-        setError("DarkHelp cfg file does not exist: " + options_.modelCfg);
+      if (!fs::exists(session.modelCfg) || !fs::is_regular_file(session.modelCfg)) {
+        setError("DarkHelp cfg file does not exist: " + session.modelCfg);
         return;
       }
 
-      if (!fs::exists(options_.modelWeights) || !fs::is_regular_file(options_.modelWeights)) {
-        setError("DarkHelp weights file does not exist: " + options_.modelWeights);
+      if (!fs::exists(session.modelWeights) || !fs::is_regular_file(session.modelWeights)) {
+        setError("DarkHelp weights file does not exist: " + session.modelWeights);
         return;
       }
 
-      if (!options_.modelNames.empty()
-        && (!fs::exists(options_.modelNames) || !fs::is_regular_file(options_.modelNames))) {
-        setError("DarkHelp names file does not exist: " + options_.modelNames);
+      if (!session.modelNames.empty()
+        && (!fs::exists(session.modelNames) || !fs::is_regular_file(session.modelNames))) {
+        setError("DarkHelp names file does not exist: " + session.modelNames);
         return;
       }
     } catch (const std::exception & error) {
@@ -550,7 +776,7 @@ class InferenceRuntime {
       workerRunning_ = true;
       selectedMode_ = "darkhelp";
     }
-    workerThread_ = std::thread(&InferenceRuntime::runDarkhelpLoop, this, source);
+    workerThread_ = std::thread(&InferenceRuntime::runDarkhelpLoop, this, session);
 #else
     (void) payload;
     setError("DarkHelp support is not compiled in this sidecar build.");
@@ -591,13 +817,15 @@ class InferenceRuntime {
     std::lock_guard<std::mutex> lock(mutex_);
     json body = {
       {"mode", selectedMode_},
-      {"darkhelp_enabled", options_.enableDarkhelp},
+      {"darkhelp_enabled", activeDarkhelpEnabled_},
       {"darkhelp_compiled", darkhelpCompiled()},
       {"darkhelp_worker_running", workerRunning_},
-      {"threshold", options_.threshold},
-      {"model_cfg", options_.modelCfg},
-      {"model_weights", options_.modelWeights},
-      {"model_names", options_.modelNames},
+      {"threshold", activeThreshold_},
+      {"video_loop", activeLoopVideoFiles_},
+      {"mjpeg_quality", activeMjpegQuality_},
+      {"model_cfg", activeModelCfg_},
+      {"model_weights", activeModelWeights_},
+      {"model_names", activeModelNames_},
       {"video_source", activeVideoSource_},
       {"latest_frame_available", !latestFrameBytes_.empty()},
       {"latest_detection_available", !latestDetection_.empty()},
@@ -648,19 +876,19 @@ class InferenceRuntime {
     return false;
   }
 
-  void runDarkhelpLoop(const std::string source) {
+  void runDarkhelpLoop(const SessionSettings session) {
     bool stoppedByRequest = false;
 
     try {
-      DarkHelp::NN network(options_.modelCfg, options_.modelWeights, options_.modelNames);
-      network.config.threshold = static_cast<float>(options_.threshold);
+      DarkHelp::NN network(session.modelCfg, session.modelWeights, session.modelNames);
+      network.config.threshold = static_cast<float>(session.threshold);
       network.config.names_include_percentage = false;
       network.config.annotation_include_duration = false;
       network.config.annotation_include_timestamp = false;
 
       cv::VideoCapture capture;
       std::string openError;
-      if (!openVideoCapture(source, capture, openError)) {
+      if (!openVideoCapture(session.videoSource, capture, openError)) {
         throw std::runtime_error(openError);
       }
 
@@ -668,7 +896,7 @@ class InferenceRuntime {
 
       bool isFileSource = false;
       try {
-        isFileSource = fs::exists(source) && fs::is_regular_file(source);
+        isFileSource = fs::exists(session.videoSource) && fs::is_regular_file(session.videoSource);
       } catch (const std::exception &) {
         isFileSource = false;
       }
@@ -684,10 +912,10 @@ class InferenceRuntime {
 
         cv::Mat frame;
         if (!capture.read(frame) || frame.empty()) {
-          if (options_.loopVideoFiles && isFileSource && capture.set(cv::CAP_PROP_POS_FRAMES, 0.0)) {
+          if (session.loopVideoFiles && isFileSource && capture.set(cv::CAP_PROP_POS_FRAMES, 0.0)) {
             continue;
           }
-          throw std::runtime_error("Video source ended or frame read failed for '" + source + "'.");
+          throw std::runtime_error("Video source ended or frame read failed for '" + session.videoSource + "'.");
         }
 
         const DarkHelp::PredictionResults predictions = network.predict(frame);
@@ -723,7 +951,7 @@ class InferenceRuntime {
         std::vector<unsigned char> encodedJpeg;
         const std::vector<int> encodeParameters = {
           cv::IMWRITE_JPEG_QUALITY,
-          options_.mjpegQuality
+          session.mjpegQuality
         };
         (void) cv::imencode(".jpg", frame, encodedJpeg, encodeParameters);
 
@@ -740,7 +968,7 @@ class InferenceRuntime {
           }},
           {"objects", objects},
           {"source", "inference-sidecar-darkhelp"},
-          {"video_source", source}
+          {"video_source", session.videoSource}
         };
         latestFrameBytes_ = std::move(encodedJpeg);
         lastError_.clear();
@@ -765,6 +993,13 @@ class InferenceRuntime {
   long long processedFrames_ = 0;
   std::string selectedMode_ = "replay";
   std::string activeVideoSource_;
+  bool activeDarkhelpEnabled_ = true;
+  double activeThreshold_ = 0.25;
+  bool activeLoopVideoFiles_ = true;
+  int activeMjpegQuality_ = 80;
+  std::string activeModelCfg_;
+  std::string activeModelWeights_;
+  std::string activeModelNames_;
   std::string lastError_;
   json latestDetection_ = json::object();
   std::vector<unsigned char> latestFrameBytes_;
