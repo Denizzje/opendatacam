@@ -102,6 +102,7 @@ START_PAYLOAD_FILE=/tmp/sidecar-start.json npm run smoke:sidecar
 - `SIDECAR_REPLAY_FRAMES_DIR` (optional directory with `.jpg`/`.jpeg` frames)
 - `SIDECAR_REPLAY_DETECTIONS_JSON` (optional JSON array of frame detections)
 - `MJPEG_STREAM_INTERVAL_MS` (default: `200`)
+  - For desktop compose demo (`docker/run/desktop/docker-compose.v4.yml`), this is set to `33` so MJPEG updates stay aligned with detection cadence.
 - `MJPEG_BOUNDARY` (default: `frame`)
 - `SIDECAR_MJPEG_QUALITY` (default: `80`, `1..100`)
 - `SIDECAR_MJPEG_SAMPLE_FRAME` (optional absolute/relative path to JPEG frame)

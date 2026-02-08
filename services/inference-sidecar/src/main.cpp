@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -901,7 +902,20 @@ class InferenceRuntime {
         isFileSource = false;
       }
 
+      // File sources should be paced to their native FPS. Without pacing, inference can run
+      // hundreds of FPS, which makes MJPEG playback look jumpy and desync overlays.
+      constexpr double kMinPlayableFps = 1.0;
+      constexpr double kMaxPlayableFps = 240.0;
+      const double detectedSourceFps = capture.get(cv::CAP_PROP_FPS);
+      const bool hasValidSourceFps = std::isfinite(detectedSourceFps)
+        && detectedSourceFps >= kMinPlayableFps
+        && detectedSourceFps <= kMaxPlayableFps;
+      const auto sourceFrameDuration = hasValidSourceFps
+        ? std::chrono::duration<double>(1.0 / detectedSourceFps)
+        : std::chrono::duration<double>::zero();
+
       while (capture.isOpened()) {
+        const auto frameLoopStart = std::chrono::steady_clock::now();
         {
           std::lock_guard<std::mutex> lock(mutex_);
           if (stopRequested_) {
@@ -972,6 +986,13 @@ class InferenceRuntime {
         };
         latestFrameBytes_ = std::move(encodedJpeg);
         lastError_.clear();
+
+        if (isFileSource && sourceFrameDuration.count() > 0.0) {
+          const auto elapsed = std::chrono::steady_clock::now() - frameLoopStart;
+          if (elapsed < sourceFrameDuration) {
+            std::this_thread::sleep_for(sourceFrameDuration - elapsed);
+          }
+        }
       }
     } catch (const std::exception & error) {
       setError(error.what());

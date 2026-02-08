@@ -35,7 +35,7 @@ services:
       - SIDECAR_VIDEO_LOOP=true
       - SIDECAR_EMIT_DEMO_DETECTIONS=false
       - DETECTIONS_STREAM_INTERVAL_MS=33
-      - MJPEG_STREAM_INTERVAL_MS=100
+      - MJPEG_STREAM_INTERVAL_MS=33
       - SIDECAR_MJPEG_QUALITY=80
     volumes:
       - './models:/opt/models:ro'
