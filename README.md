@@ -107,6 +107,7 @@ See [Development notes](https://opendata.cam/docs/development/)
 The `development` branch now contains the first modernization scaffolding:
 
 - Initial `/api/v2` runtime endpoints in `server.js`
+- `/api/v2/runtime/*` now integrates with `INFERENCE_SIDECAR_URL` (default: `http://localhost:9080`)
 - Sidecar scaffold in `services/inference-sidecar/`
 - Draft v4 config schema and migration helper
 

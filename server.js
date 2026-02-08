@@ -27,6 +27,7 @@ const configHelper = require('./server/utils/configHelper');
 const GpsTracker = require('./server/tracker/GpsTracker');
 const packageJson = require('./package.json');
 const { YoloDarknet } = require('./server/processes/YoloDarknet');
+const { InferenceSidecarClient } = require('./server/processes/InferenceSidecarClient');
 const { MongoDbManager } = require('./server/db/MongoDbManager');
 
 if (packageJson.version !== config.OPENDATACAM_VERSION) {
@@ -72,6 +73,16 @@ if (config.VIDEO_INPUT === 'simulation') {
   }
 }
 let YOLO = new YoloDarknet(yoloConfig);
+
+const inferenceSidecarBaseURL = process.env.INFERENCE_SIDECAR_URL
+  || (config.inference
+    && config.inference.sidecar
+    && config.inference.sidecar.base_url)
+  || 'http://localhost:9080';
+const inferenceSidecar = new InferenceSidecarClient({
+  baseURL: inferenceSidecarBaseURL,
+});
+console.log(`Inference sidecar configured at: ${inferenceSidecarBaseURL}`);
 
 // Select tracker, based on GPS settings in config
 let tracker = Tracker;
@@ -163,6 +174,22 @@ app.prepare()
       return YOLO.stop();
     };
 
+    const sendSidecarRuntimeError = (res, error, contextMessage) => {
+      console.error(error);
+      const details = error && error.response && error.response.data
+        ? error.response.data
+        : { message: error.message };
+
+      res.status(502).json({
+        status: 'error',
+        message: contextMessage,
+        sidecar: {
+          baseURL: inferenceSidecarBaseURL,
+          details,
+        },
+      });
+    };
+
     // TODO add compression: https://github.com/expressjs/compression
 
     // This render pages/index.js for a request to /
@@ -193,31 +220,59 @@ app.prepare()
     });
 
     express.post('/api/v2/runtime/session/start', (req, res) => {
-      const urlData = getRuntimeStreamURLData(req);
-      startRuntimeSession(urlData);
-      res.status(202).json({
-        status: 'starting',
+      const payload = req.body || {};
+      inferenceSidecar.startSession(payload).then((sidecarResponse) => {
+        res.status(202).json({
+          status: 'starting',
+          sidecar: sidecarResponse,
+        });
+      }).catch((error) => {
+        sendSidecarRuntimeError(res, error, 'Failed to start inference sidecar session');
       });
     });
 
     express.post('/api/v2/runtime/session/stop', (req, res) => {
-      stopRuntimeSession().then(() => {
+      Promise.allSettled([
+        inferenceSidecar.stopSession(),
+        stopRuntimeSession(),
+      ]).then((result) => {
+        const sidecarResult = result[0];
+        if (sidecarResult.status === 'rejected') {
+          sendSidecarRuntimeError(
+            res,
+            sidecarResult.reason,
+            'Failed to stop inference sidecar session',
+          );
+          return;
+        }
+
         res.status(200).json({
           status: 'stopped',
-        });
-      }).catch((error) => {
-        console.error(error);
-        res.status(500).json({
-          status: 'error',
-          message: 'Failed to stop runtime session',
+          sidecar: sidecarResult.value,
         });
       });
     });
 
     express.get('/api/v2/runtime/status', (req, res) => {
-      res.json({
-        status: 'ok',
-        runtime: Opendatacam.getStatus(),
+      Promise.all([
+        inferenceSidecar.getSessionStatus().catch((error) => ({
+          status: 'unavailable',
+          message: error.message,
+        })),
+        inferenceSidecar.getReadiness().catch((error) => ({
+          status: 'unavailable',
+          message: error.message,
+        })),
+      ]).then(([sidecarSession, sidecarReadiness]) => {
+        res.json({
+          status: 'ok',
+          runtime: Opendatacam.getStatus(),
+          sidecar: {
+            baseURL: inferenceSidecarBaseURL,
+            session: sidecarSession,
+            readiness: sidecarReadiness,
+          },
+        });
       });
     });
 
