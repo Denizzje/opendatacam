@@ -59,7 +59,7 @@ class YoloSimulation extends YoloDarknet {
 
     console.log('Process YOLO initialized');
     this.isInitialized = true;
-    console.debug(this);
+    console.debug('YoloSimulation initialized');
   }
 
   static normalizePath(p) {
@@ -259,7 +259,6 @@ class YoloSimulation extends YoloDarknet {
       }
     });
     killable(this.simulationJSONHTTPStreamServer);
-    console.debug(simulationState.config);
     this.simulationJSONHTTPStreamServer.listen(this.config.jsonStreamPort);
 
     console.debug('Start MJPEG server');
