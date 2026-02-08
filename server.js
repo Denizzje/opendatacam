@@ -32,6 +32,7 @@ const { SidecarDetectionsStream } = require('./server/processes/SidecarDetection
 const { normalizeSidecarFrame } = require('./server/processes/SidecarDetectionsAdapter');
 const { MongoDbManager } = require('./server/db/MongoDbManager');
 const { buildSidecarSessionPayload } = require('./server/utils/sidecarRuntimePayload');
+const { getRuntimeFeatureFlags } = require('./server/utils/runtimeFeatureFlags');
 
 const config = loadConfig();
 
@@ -121,18 +122,55 @@ if (config.DATABASE === 'mongo') {
   dbManager = new MongoDbManager(config.DATABASE_PARAMS.mongo);
 }
 
-if (dbManager !== null) {
+const DB_RECONNECT_DELAY_MS = 10000;
+let dbConnectRetryTimer = null;
+const clearDbConnectRetryTimer = () => {
+  if (dbConnectRetryTimer) {
+    clearTimeout(dbConnectRetryTimer);
+    dbConnectRetryTimer = null;
+  }
+};
+
+const scheduleDbReconnect = () => {
+  if (dbConnectRetryTimer || dbManager === null) {
+    return;
+  }
+
+  dbConnectRetryTimer = setTimeout(() => {
+    dbConnectRetryTimer = null;
+    connectDatabase();
+  }, DB_RECONNECT_DELAY_MS);
+};
+
+const connectDatabase = () => {
+  if (dbManager === null) {
+    Opendatacam.setDatabase(null);
+    return;
+  }
+
   dbManager.connect().then(
     () => {
+      clearDbConnectRetryTimer();
+      Opendatacam.setDatabase(dbManager);
       console.log('Success init db');
     },
     (err) => {
-      console.error(err);
+      Opendatacam.setDatabase(null);
+      console.warn(`Database unavailable, retrying in ${DB_RECONNECT_DELAY_MS}ms`);
+      console.warn(err && err.message ? err.message : err);
+      scheduleDbReconnect();
     },
   );
-  Opendatacam.setDatabase(dbManager);
+};
+
+if (dbManager !== null) {
+  connectDatabase();
+} else if (config.DATABASE === 'none') {
+  console.warn('Database disabled (storage.database=none).');
+  Opendatacam.setDatabase(null);
 } else {
-  console.warn('No or unknown database configured.');
+  console.warn(`No or unknown database configured (${config.DATABASE}).`);
+  Opendatacam.setDatabase(null);
 }
 
 let stdoutBuffer = '';
@@ -154,6 +192,18 @@ app.prepare()
     // Start HTTP server
     const server = http.createServer(express);
     express.use(bodyParser.json());
+
+    const isDatabaseReady = () => dbManager !== null && dbManager.isConnected();
+    const sendDatabaseUnavailable = (req, res) => {
+      if (req.path.indexOf('/api/v2/') === 0) {
+        res.status(503).json({
+          status: 'database_unavailable',
+          message: 'Database is not connected',
+        });
+      } else {
+        res.status(503).send('Database is not connected');
+      }
+    };
 
     const getRuntimeStreamURLData = (req) => {
       if (req) {
@@ -196,9 +246,10 @@ app.prepare()
     };
 
     const sidecarMjpegStreamURL = `${inferenceSidecarBaseURL}/api/v1/stream/mjpeg`;
-    const useLegacyMjpegForV2 = process.env.OPENDATACAM_V2_MJPEG_FALLBACK_LEGACY !== 'false';
-    const useSidecarDetectionsForV2 = process.env.OPENDATACAM_V2_USE_SIDECAR_DETECTIONS === 'true';
-    const autoStartV2RuntimeOnRoot = process.env.OPENDATACAM_V2_AUTO_START_ON_ROOT !== 'false';
+    const runtimeFeatureFlags = getRuntimeFeatureFlags();
+    const useLegacyMjpegForV2 = runtimeFeatureFlags.useLegacyMjpegForV2;
+    const useSidecarDetectionsForV2 = runtimeFeatureFlags.useSidecarDetectionsForV2;
+    const autoStartV2RuntimeOnRoot = runtimeFeatureFlags.autoStartV2RuntimeOnRoot;
     const sidecarDetectionsPath = '/api/v1/stream/detections';
     let sidecarDetectionsStream = null;
     let sidecarFallbackFrameId = 0;
@@ -337,36 +388,36 @@ app.prepare()
           startRuntimeSession(urlData);
         });
 
-      prepareRuntime.then(() => {
-        inferenceSidecar.startSession(sidecarSessionPayload).then((sidecarResponse) => {
-          if (useSidecarDetectionsForV2) {
-            startSidecarDetectionsStream();
-          }
+      prepareRuntime.then(() => (
+        inferenceSidecar.startSession(sidecarSessionPayload)
+      )).then((sidecarResponse) => {
+        if (useSidecarDetectionsForV2) {
+          startSidecarDetectionsStream();
+        }
 
-          res.status(202).json({
-            status: 'starting',
-            detectionsSource: useSidecarDetectionsForV2 ? 'sidecar' : 'legacy',
-            sidecar: sidecarResponse,
-          });
-        }).catch((error) => {
-          console.error(error);
-          if (useSidecarDetectionsForV2) {
-            console.warn('Falling back to legacy detections runtime after sidecar start failure');
-            startRuntimeSession(urlData);
-            stopSidecarDetectionsStream();
-          }
+        res.status(202).json({
+          status: 'starting',
+          detectionsSource: useSidecarDetectionsForV2 ? 'sidecar' : 'legacy',
+          sidecar: sidecarResponse,
+        });
+      }).catch((error) => {
+        if (useSidecarDetectionsForV2) {
+          stopSidecarDetectionsStream();
+          sendSidecarRuntimeError(res, error, 'Failed to start sidecar runtime session');
+          return;
+        }
 
-          const details = error && error.response && error.response.data
-            ? error.response.data
-            : { message: error.message };
-          res.status(202).json({
-            status: 'starting_with_sidecar_warning',
-            detectionsSource: useSidecarDetectionsForV2 ? 'legacy_fallback' : 'legacy',
-            sidecar: {
-              baseURL: inferenceSidecarBaseURL,
-              details,
-            },
-          });
+        console.error(error);
+        const details = error && error.response && error.response.data
+          ? error.response.data
+          : { message: error.message };
+        res.status(202).json({
+          status: 'starting_with_sidecar_warning',
+          detectionsSource: 'legacy',
+          sidecar: {
+            baseURL: inferenceSidecarBaseURL,
+            details,
+          },
         });
       });
     });
@@ -965,6 +1016,16 @@ app.prepare()
       const limit = parseInt(req.query.limit, 10) || 20;
       const offset = parseInt(req.query.offset, 10) || 0;
 
+      if (!isDatabaseReady()) {
+        res.json({
+          offset,
+          limit,
+          total: 0,
+          recordings: [],
+        });
+        return;
+      }
+
       const recordingPromise = dbManager.getRecordings(limit, offset);
       const countPromise = dbManager.getRecordingsCount();
 
@@ -975,12 +1036,26 @@ app.prepare()
           total: values[1],
           recordings: values[0],
         });
+      }).catch((error) => {
+        console.error('Failed to list recordings');
+        console.error(error);
+        res.sendStatus(500);
       });
     });
 
     express.get('/api/v2/recordings', (req, res) => {
       const limit = parseInt(req.query.limit, 10) || 20;
       const offset = parseInt(req.query.offset, 10) || 0;
+
+      if (!isDatabaseReady()) {
+        res.json({
+          offset,
+          limit,
+          total: 0,
+          recordings: [],
+        });
+        return;
+      }
 
       const recordingPromise = dbManager.getRecordings(limit, offset);
       const countPromise = dbManager.getRecordingsCount();
@@ -991,6 +1066,13 @@ app.prepare()
           limit,
           total: values[1],
           recordings: values[0],
+        });
+      }).catch((error) => {
+        console.error('Failed to list recordings');
+        console.error(error);
+        res.status(500).json({
+          status: 'error',
+          message: 'Failed to list recordings',
         });
       });
     });
@@ -1046,20 +1128,41 @@ app.prepare()
           ]
      */
     express.get('/recording/:id/tracker', (req, res) => {
+      if (!isDatabaseReady()) {
+        sendDatabaseUnavailable(req, res);
+        return;
+      }
+
       dbManager.getTrackerHistoryOfRecording(req.params.id).then((trackerData) => {
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Content-disposition',
           `attachment; filename=trackerData-${req.params.id}.json`);
         res.json(trackerData);
+      }).catch((error) => {
+        console.error('Failed to get tracker history');
+        console.error(error);
+        res.sendStatus(500);
       });
     });
 
     express.get('/api/v2/recordings/:id/tracker', (req, res) => {
+      if (!isDatabaseReady()) {
+        sendDatabaseUnavailable(req, res);
+        return;
+      }
+
       dbManager.getTrackerHistoryOfRecording(req.params.id).then((trackerData) => {
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Content-disposition',
           `attachment; filename=trackerData-${req.params.id}.json`);
         res.json(trackerData);
+      }).catch((error) => {
+        console.error('Failed to get tracker history');
+        console.error(error);
+        res.status(500).json({
+          status: 'error',
+          message: 'Failed to get tracker history',
+        });
       });
     });
 
@@ -1095,14 +1198,35 @@ app.prepare()
         }
      */
     express.get('/recording/:id', (req, res) => {
+      if (!isDatabaseReady()) {
+        sendDatabaseUnavailable(req, res);
+        return;
+      }
+
       dbManager.getRecording(req.params.id).then((recordingData) => {
         res.json(recordingData);
+      }).catch((error) => {
+        console.error('Failed to get recording');
+        console.error(error);
+        res.sendStatus(500);
       });
     });
 
     express.get('/api/v2/recordings/:id', (req, res) => {
+      if (!isDatabaseReady()) {
+        sendDatabaseUnavailable(req, res);
+        return;
+      }
+
       dbManager.getRecording(req.params.id).then((recordingData) => {
         res.json(recordingData);
+      }).catch((error) => {
+        console.error('Failed to get recording');
+        console.error(error);
+        res.status(500).json({
+          status: 'error',
+          message: 'Failed to get recording',
+        });
       });
     });
 
@@ -1119,15 +1243,36 @@ app.prepare()
      *   HTTP/1.1 200 OK
      */
     express.delete('/recording/:id', (req, res) => {
+      if (!isDatabaseReady()) {
+        sendDatabaseUnavailable(req, res);
+        return;
+      }
+
       dbManager.deleteRecording(req.params.id).then(() => {
         res.sendStatus(200);
+      }).catch((error) => {
+        console.error('Failed to delete recording');
+        console.error(error);
+        res.sendStatus(500);
       });
     });
 
     express.delete('/api/v2/recordings/:id', (req, res) => {
+      if (!isDatabaseReady()) {
+        sendDatabaseUnavailable(req, res);
+        return;
+      }
+
       dbManager.deleteRecording(req.params.id).then(() => {
         res.status(200).json({
           status: 'deleted',
+        });
+      }).catch((error) => {
+        console.error('Failed to delete recording');
+        console.error(error);
+        res.status(500).json({
+          status: 'error',
+          message: 'Failed to delete recording',
         });
       });
     });
@@ -1217,6 +1362,11 @@ app.prepare()
           ]
      */
     express.get('/recording/:id/counter', (req, res) => {
+      if (!isDatabaseReady()) {
+        sendDatabaseUnavailable(req, res);
+        return;
+      }
+
       dbManager.getCounterHistoryOfRecording(req.params.id).then((counterData) => {
         if (Object.keys(counterData).length === 0) {
           res.sendStatus(404);
@@ -1236,6 +1386,11 @@ app.prepare()
     });
 
     express.get('/api/v2/recordings/:id/counter', (req, res) => {
+      if (!isDatabaseReady()) {
+        sendDatabaseUnavailable(req, res);
+        return;
+      }
+
       dbManager.getCounterHistoryOfRecording(req.params.id).then((counterData) => {
         if (Object.keys(counterData).length === 0) {
           res.sendStatus(404);
@@ -1250,7 +1405,10 @@ app.prepare()
       }).catch((reason) => {
         console.log('Getting counter records failed');
         console.log(reason);
-        res.sendStatus(500);
+        res.status(500).json({
+          status: 'error',
+          message: 'Getting counter records failed',
+        });
       });
     });
 
@@ -1277,6 +1435,11 @@ app.prepare()
           "2019-05-02T19:10:36.925Z","truc","car",4156,"rightleft_bottomtop"
      */
     express.get('/recording/:id/counter/csv', (req, res) => {
+      if (!isDatabaseReady()) {
+        sendDatabaseUnavailable(req, res);
+        return;
+      }
+
       dbManager.getCounterHistoryOfRecording(req.params.id).then((counterData) => {
         let data = counterData.counterHistory;
         if (data) {
@@ -1319,10 +1482,19 @@ app.prepare()
         const startDate = counterData.dateStart.toISOString().split('T')[0];
         const fileName = `counterData-${startDate}-${req.params.id}.csv`;
         res.csv(data, true, { 'Content-disposition': `attachment; filename=${fileName}` });
+      }).catch((error) => {
+        console.error('Failed to export counter history CSV');
+        console.error(error);
+        res.sendStatus(500);
       });
     });
 
     express.get('/api/v2/recordings/:id/counter/csv', (req, res) => {
+      if (!isDatabaseReady()) {
+        sendDatabaseUnavailable(req, res);
+        return;
+      }
+
       dbManager.getCounterHistoryOfRecording(req.params.id).then((counterData) => {
         let data = counterData.counterHistory;
         if (data) {
@@ -1360,6 +1532,13 @@ app.prepare()
         const startDate = counterData.dateStart.toISOString().split('T')[0];
         const fileName = `counterData-${startDate}-${req.params.id}.csv`;
         res.csv(data, true, { 'Content-disposition': `attachment; filename=${fileName}` });
+      }).catch((error) => {
+        console.error('Failed to export counter history CSV');
+        console.error(error);
+        res.status(500).json({
+          status: 'error',
+          message: 'Failed to export counter history CSV',
+        });
       });
     });
 

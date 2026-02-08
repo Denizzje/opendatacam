@@ -141,18 +141,19 @@ The `development` branch now contains the first modernization scaffolding:
 
 - Initial `/api/v2` runtime endpoints in `server.js`
 - `/api/v2/runtime/*` now integrates with `INFERENCE_SIDECAR_URL` (default: `http://localhost:9080`)
-- Set `OPENDATACAM_V2_USE_SIDECAR_DETECTIONS=true` to use sidecar detections as runtime source for `/api/v2/runtime/session/*`
+- `/api/v2/runtime/*` now uses sidecar detections by default. Set `OPENDATACAM_V2_USE_SIDECAR_DETECTIONS=false` to opt into legacy YOLO runtime
 - In sidecar mode, `/` now auto-starts sidecar runtime session (not legacy YOLO). Disable this with `OPENDATACAM_V2_AUTO_START_ON_ROOT=false`
 - Frontend controls and streams now use `/api/v2/*` routes (recordings, counting areas, UI settings, SSE, MJPEG, uploads)
 - Video resolution updates are now idempotent and database restore errors during sidecar startup are handled without unhandled promise noise
-- In sidecar detections mode, startup falls back to legacy runtime if sidecar session start fails
-- `/api/v2/stream/mjpeg` defaults to legacy stream for compatibility. Set `OPENDATACAM_V2_MJPEG_FALLBACK_LEGACY=false` to force sidecar MJPEG (`/api/v1/stream/mjpeg`)
+- In sidecar detections mode, `/api/v2/runtime/session/start` now fails fast with sidecar error details instead of silently falling back to legacy runtime
+- `/api/v2/stream/mjpeg` now defaults to sidecar MJPEG (`/api/v1/stream/mjpeg`). Set `OPENDATACAM_V2_MJPEG_FALLBACK_LEGACY=true` to force legacy MJPEG
 - Sidecar runtime in `services/inference-sidecar/` now supports DarkHelp live inference with replay fallback for detections + MJPEG streams
 - `/api/v2/runtime/session/start` now forwards `inference.sidecar.runtime` defaults from config v4 to sidecar session payload
 - `docker/run/*/docker-compose.v4.yml` now runs sidecar-first (`OPENDATACAM_V2_USE_SIDECAR_DETECTIONS=true`) and mounts `./models` + `./videos` into sidecar runtime paths
 - Added local demo + smoke scripts: `npm run demo:legogears:api` and `npm run smoke:sidecar`
 - Draft v4 config schema and migration helper
 - Runtime config bridge supports v4 via `OPENDATACAM_CONFIG_PATH=/path/to/config.v4.json`
+- Dev startup now auto-uses `config/config.v4.example.json` if `config.json` is still the docker template
 
 See `docs/migration-v3-to-v4.md` for current v4 config notes.
 

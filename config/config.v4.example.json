@@ -19,7 +19,7 @@
     "darknet_commit": "a3df422adf773c87cc6af1dd0a577e87847ae081",
     "darkhelp_commit": "8bf10619cf10776b30ac157fca80cf0043452b40",
     "sidecar": {
-      "base_url": "http://inference-sidecar:9080",
+      "base_url": "http://localhost:9080",
       "runtime": {
         "darkhelp_enabled": true,
         "darkhelp_cfg": "/opt/models/yolov4-tiny.cfg",
@@ -63,13 +63,8 @@
     }
   },
   "storage": {
-    "database": "mongo",
-    "database_params": {
-      "mongo": {
-        "url": "mongodb://mongo:27017",
-        "persistTracker": false
-      }
-    }
+    "database": "none",
+    "database_params": {}
   },
   "ports": {
     "app": 8080,

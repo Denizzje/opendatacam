@@ -135,6 +135,9 @@ module.exports = {
     if (Opendatacam.database !== null) {
       Opendatacam.database.persistAppSettings({
         countingAreas,
+      }).catch((error) => {
+        console.warn('Failed to persist counting areas');
+        console.warn(error && error.message ? error.message : error);
       });
     }
     Object.keys(countingAreas).map((countingAreaKey) => {

@@ -25,6 +25,15 @@ fi
 echo "PORT=$PORT"
 echo "NODE_ENV=$NODE_ENV"
 
+if [ -z "${OPENDATACAM_CONFIG_PATH:-}" ] \
+  && [ -f "$REPO_ROOT/config.json" ] \
+  && [ -f "$REPO_ROOT/config/config.v4.example.json" ]; then
+  if grep -q "TO_REPLACE_PATH_TO_DARKNET" "$REPO_ROOT/config.json"; then
+    export OPENDATACAM_CONFIG_PATH="$REPO_ROOT/config/config.v4.example.json"
+    echo "OPENDATACAM_CONFIG_PATH not set; using $OPENDATACAM_CONFIG_PATH for local development"
+  fi
+fi
+
 if [ "$NODE_ENV" == "production" ]; then
   # Build automatically generates API docs
   $REPO_ROOT/scripts/npm/build.sh

@@ -25,7 +25,7 @@ node scripts/migrate-config-v3-to-v4.js ./config.json ./config.v4.json
 - You can point runtime to a custom config path with `OPENDATACAM_CONFIG_PATH=/path/to/config.v4.json`.
 - `inference.sidecar.runtime` can now define sidecar session defaults (model files, threshold, video source, loop, MJPEG quality).
 - On `/api/v2/runtime/session/start`, OpenDataCam sends these runtime defaults to the sidecar, and request payload values in `sidecar_runtime` override config defaults.
-- In sidecar mode (`OPENDATACAM_V2_USE_SIDECAR_DETECTIONS=true`), `/` auto-starts sidecar runtime instead of legacy YOLO. Set `OPENDATACAM_V2_AUTO_START_ON_ROOT=false` to disable auto-start.
+- Sidecar detections mode is now default for `/api/v2/runtime/*` and `/` auto-starts sidecar runtime instead of legacy YOLO. Set `OPENDATACAM_V2_USE_SIDECAR_DETECTIONS=false` or `OPENDATACAM_V2_AUTO_START_ON_ROOT=false` to change this behavior.
 - Frontend runtime controls/streams now call `/api/v2/*` endpoints directly.
 
 ## Sidecar runtime block example

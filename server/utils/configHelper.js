@@ -50,8 +50,8 @@ module.exports = {
     const config = loadConfig();
     const port = getPortFromConfig(config, 'darknet_mjpeg_stream', 8090);
     if (
-      envDarknetJsonStreamPort
-      && parseAndTestIsNumber(envDarknetJsonStreamPort)
+      envDarknetMjpegStreamPort
+      && parseAndTestIsNumber(envDarknetMjpegStreamPort)
     ) {
       return parseInt(envDarknetMjpegStreamPort, 10);
     }

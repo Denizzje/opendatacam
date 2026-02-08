@@ -111,7 +111,7 @@
       "additionalProperties": false,
       "required": ["database", "database_params"],
       "properties": {
-        "database": { "type": "string" },
+        "database": { "type": "string", "enum": ["mongo", "none"] },
         "database_params": { "type": "object" }
       }
     },
