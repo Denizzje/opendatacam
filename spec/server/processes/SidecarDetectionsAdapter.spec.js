@@ -80,6 +80,26 @@ describe('SidecarDetectionsAdapter', () => {
     expect(normalized.objects).toEqual([]);
   });
 
+  it('prefers inference frame id over transport frame id', () => {
+    const normalized = normalizeSidecarFrame({
+      frame_id: 99,
+      inference_frame_id: 7,
+      objects: [],
+    }, 0);
+
+    expect(normalized.frameId).toBe(7);
+  });
+
+  it('uses replay frame id when inference frame id is missing', () => {
+    const normalized = normalizeSidecarFrame({
+      frame_id: 99,
+      replay_frame_id: 13,
+      objects: [],
+    }, 0);
+
+    expect(normalized.frameId).toBe(13);
+  });
+
   it('filters objects that cannot be normalized', () => {
     const normalized = normalizeSidecarFrame({
       frame_id: 1,

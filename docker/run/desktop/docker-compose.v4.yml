@@ -22,8 +22,9 @@ services:
   inference-sidecar:
     build:
       context: ../../..
-      dockerfile: services/inference-sidecar/Dockerfile
+      dockerfile: services/inference-sidecar/Dockerfile.gpu
     restart: always
+    gpus: all
     environment:
       - SIDECAR_PORT=9080
       - SIDECAR_ENABLE_DARKHELP=true
@@ -33,6 +34,7 @@ services:
       - SIDECAR_VIDEO_SOURCE=/opt/video/input.mp4
       - SIDECAR_VIDEO_LOOP=true
       - SIDECAR_EMIT_DEMO_DETECTIONS=false
+      - DETECTIONS_STREAM_INTERVAL_MS=33
       - MJPEG_STREAM_INTERVAL_MS=100
       - SIDECAR_MJPEG_QUALITY=80
     volumes:

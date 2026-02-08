@@ -93,6 +93,7 @@ START_PAYLOAD_FILE=/tmp/sidecar-start.json npm run smoke:sidecar
 - `SIDECAR_VIDEO_SOURCE` (optional default source, e.g. video file, stream URL, webcam index)
 - `SIDECAR_VIDEO_LOOP` (default: `true`, loops file sources on EOF)
 - `DETECTIONS_STREAM_INTERVAL_MS` (default: `200`)
+  - For desktop compose demo (`docker/run/desktop/docker-compose.v4.yml`), this is set to `33` to target ~30 FPS status updates.
 - `SIDECAR_DEFAULT_VIDEO_WIDTH` (default: `1280`)
 - `SIDECAR_DEFAULT_VIDEO_HEIGHT` (default: `720`)
 - `SIDECAR_EMIT_DEMO_DETECTIONS` (default: `false`)

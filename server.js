@@ -253,6 +253,7 @@ app.prepare()
     const sidecarDetectionsPath = '/api/v1/stream/detections';
     let sidecarDetectionsStream = null;
     let sidecarFallbackFrameId = 0;
+    let sidecarLastProcessedFrameId = null;
 
     const stopSidecarDetectionsStream = () => {
       if (sidecarDetectionsStream) {
@@ -264,6 +265,7 @@ app.prepare()
     const startSidecarDetectionsStream = () => {
       stopSidecarDetectionsStream();
       sidecarFallbackFrameId = 0;
+      sidecarLastProcessedFrameId = null;
 
       sidecarDetectionsStream = new SidecarDetectionsStream({
         baseURL: inferenceSidecarBaseURL,
@@ -293,6 +295,14 @@ app.prepare()
             Opendatacam.setVideoResolution(normalized.videoResolution);
           }
 
+          // The sidecar emits events on a fixed interval and can repeat the same inference frame.
+          // Ignore duplicates to avoid skewing FPS/tracker updates toward stream tick rate.
+          if (sidecarLastProcessedFrameId !== null
+            && normalized.frameId === sidecarLastProcessedFrameId) {
+            return;
+          }
+
+          sidecarLastProcessedFrameId = normalized.frameId;
           sidecarFallbackFrameId = normalized.frameId + 1;
           Opendatacam.updateWithNewFrame(normalized.objects, normalized.frameId);
         },

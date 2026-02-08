@@ -25,6 +25,8 @@ describe('Opendatacam', () => {
       minAngleWithCountingLineThreshold: 5,
       computeTrajectoryBasedOnNbOfPastFrame: 5,
     };
+    // Keep fixture expectations stable regardless of repo-level default class set.
+    testConfig.VALID_CLASSES = ['*'];
     Opendatacam.setConfig(testConfig);
 
     dbSpy = jasmine.createSpyObj('DbManager', [

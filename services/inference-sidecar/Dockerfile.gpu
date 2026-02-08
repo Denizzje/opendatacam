@@ -1,0 +1,75 @@
+FROM nvidia/cuda:12.6.3-devel-ubuntu24.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+ARG DARKNET_REPO=https://codeberg.org/CCodeRun/darknet.git
+ARG DARKNET_REF=master
+ARG DARKNET_COMMIT=a3df422adf773c87cc6af1dd0a577e87847ae081
+ARG DARKNET_CUDA_ARCHITECTURES="75;86;89"
+
+ARG DARKHELP_REPO=https://codeberg.org/CCodeRun/DarkHelp.git
+ARG DARKHELP_REF=master
+ARG DARKHELP_COMMIT=8bf10619cf10776b30ac157fca80cf0043452b40
+
+RUN apt-get update && apt-get install --no-install-recommends -y \
+  build-essential \
+  ca-certificates \
+  cmake \
+  file \
+  git \
+  libmagic-dev \
+  libopencv-dev \
+  libprotobuf-dev \
+  libtclap-dev \
+  pkg-config \
+  protobuf-compiler \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/src
+ENV LIBRARY_PATH=/usr/local/cuda/lib64/stubs
+
+RUN git clone --branch ${DARKNET_REF} ${DARKNET_REPO} darknet
+RUN if [ -n "${DARKNET_COMMIT}" ]; then cd /opt/src/darknet && git fetch origin ${DARKNET_COMMIT} && git checkout -B ${DARKNET_REF} ${DARKNET_COMMIT}; fi
+RUN cd /opt/src/darknet && cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=/usr/local \
+  -DDARKNET_TRY_CUDA=ON \
+  -DDARKNET_TRY_ROCM=OFF \
+  -DDARKNET_CUDA_ARCHITECTURES="${DARKNET_CUDA_ARCHITECTURES}" \
+  -DDARKNET_TRY_ONNX=OFF
+RUN cmake --build /opt/src/darknet/build -j4
+RUN cmake --install /opt/src/darknet/build && ldconfig
+RUN ln -sf /usr/local/cuda/lib64/stubs/libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1
+
+RUN git clone --depth 1 --branch ${DARKHELP_REF} ${DARKHELP_REPO} darkhelp
+RUN if [ -n "${DARKHELP_COMMIT}" ]; then cd /opt/src/darkhelp && git fetch --depth 1 origin ${DARKHELP_COMMIT} && git checkout ${DARKHELP_COMMIT}; fi
+RUN cmake -S /opt/src/darkhelp -B /opt/src/darkhelp/build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=/usr/local
+RUN cmake --build /opt/src/darkhelp/build --target dh -j4
+RUN install -m 0755 /opt/src/darkhelp/build/src-lib/libdarkhelp.so /usr/local/lib/libdarkhelp.so \
+  && cp /opt/src/darkhelp/src-lib/*.hpp /usr/local/include/ \
+  && cp /opt/src/darkhelp/src-lib/*.h /usr/local/include/ \
+  && ldconfig
+
+COPY services/inference-sidecar /opt/src/inference-sidecar
+RUN mkdir -p /opt/src/inference-sidecar/assets
+COPY public/static/placeholder/frames/001.jpg /opt/src/inference-sidecar/assets/mjpeg-placeholder.jpg
+COPY public/static/placeholder/frames /opt/src/inference-sidecar/assets/frames
+COPY public/static/placeholder/alexeydetections30FPS.json /opt/src/inference-sidecar/assets/alexeydetections30FPS.json
+RUN rm -rf /opt/src/inference-sidecar/build
+RUN cmake -S /opt/src/inference-sidecar -B /opt/src/inference-sidecar/build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_EXE_LINKER_FLAGS="-Wl,--allow-shlib-undefined"
+RUN cmake --build /opt/src/inference-sidecar/build -j4
+
+ENV SIDECAR_PORT=9080
+ENV DARKNET_REF=${DARKNET_REF}
+ENV DARKNET_COMMIT=${DARKNET_COMMIT}
+ENV DARKHELP_COMMIT=${DARKHELP_COMMIT}
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility,video
+
+EXPOSE 9080
+
+CMD ["/opt/src/inference-sidecar/build/inference-sidecar"]

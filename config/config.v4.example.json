@@ -2,14 +2,13 @@
   "schema_version": 4,
   "app": {
     "opendatacam_version": "3.0.2",
-    "valid_classes": ["bicycle", "person", "truck", "motorbike", "car", "bus"],
+    "valid_classes": ["red light", "pin", "center", "small gear", "medium gear"],
     "display_classes": [
-      { "class": "bicycle", "hexcode": "1F6B2" },
-      { "class": "person", "hexcode": "1F6B6" },
-      { "class": "truck", "hexcode": "1F69B" },
-      { "class": "motorbike", "hexcode": "1F6F5" },
-      { "class": "car", "hexcode": "1F697" },
-      { "class": "bus", "hexcode": "1F68C" }
+      { "class": "red light", "hexcode": "1F534" },
+      { "class": "pin", "hexcode": "1F4CC" },
+      { "class": "center", "hexcode": "1F518" },
+      { "class": "small gear", "hexcode": "2699" },
+      { "class": "medium gear", "hexcode": "26ED" }
     ]
   },
   "inference": {

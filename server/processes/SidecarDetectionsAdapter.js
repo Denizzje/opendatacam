@@ -150,7 +150,17 @@ const normalizeSidecarFrame = (payload = {}, fallbackFrameId = 0) => {
     return null;
   }
 
-  const frameId = firstNumber(payload.frame_id, payload.frameId, payload.frame, fallbackFrameId);
+  // Prefer inference/replay frame IDs over transport frame IDs so FPS reflects actual inference cadence.
+  const frameId = firstNumber(
+    payload.inference_frame_id,
+    payload.inferenceFrameId,
+    payload.replay_frame_id,
+    payload.replayFrameId,
+    payload.frame_id,
+    payload.frameId,
+    payload.frame,
+    fallbackFrameId,
+  );
   const videoResolution = extractVideoResolution(payload);
   const objects = Array.isArray(payload.objects)
     ? payload.objects
