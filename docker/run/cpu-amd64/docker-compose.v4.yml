@@ -6,6 +6,8 @@ services:
     privileged: true
     environment:
       - INFERENCE_SIDECAR_URL=http://inference-sidecar:9080
+      - OPENDATACAM_V2_USE_SIDECAR_DETECTIONS=true
+      - OPENDATACAM_V2_MJPEG_FALLBACK_LEGACY=false
     volumes:
       - './config.json:/var/local/opendatacam/config.json'
     ports:
@@ -22,6 +24,8 @@ services:
     restart: always
     environment:
       - SIDECAR_PORT=9080
+      - SIDECAR_EMIT_DEMO_DETECTIONS=true
+      - MJPEG_STREAM_INTERVAL_MS=100
     ports:
       - "9080:9080"
   mongo:
