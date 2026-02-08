@@ -33,7 +33,7 @@
     { "class": "pin", "hexcode": "1F4CC"},
     { "class": "center", "hexcode": "1F518"},
     { "class": "small gear", "hexcode": "2699"},
-    { "class": "medium gear", "hexcode": "26ED"}
+    { "class": "medium gear", "hexcode": "2699"}
   ],
   "PATHFINDER_COLORS": [
     "#1f77b4",
