@@ -1,6 +1,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <mutex>
 #include <optional>
@@ -68,6 +69,45 @@ bool getBoolOrDefault(const char * name, bool defaultValue) {
   }
 
   return defaultValue;
+}
+
+std::vector<unsigned char> loadBinaryFile(const std::string & path) {
+  std::ifstream file(path, std::ios::binary);
+  if (!file) {
+    return {};
+  }
+
+  file.seekg(0, std::ios::end);
+  const auto size = static_cast<size_t>(file.tellg());
+  file.seekg(0, std::ios::beg);
+
+  std::vector<unsigned char> content(size);
+  if (size > 0) {
+    file.read(reinterpret_cast<char *>(content.data()), static_cast<std::streamsize>(size));
+  }
+
+  return content;
+}
+
+std::string resolveMjpegFramePath(const std::string & configuredPath) {
+  if (!configuredPath.empty()) {
+    return configuredPath;
+  }
+
+  const std::vector<std::string> candidates = {
+    "public/static/placeholder/frames/001.jpg",
+    "services/inference-sidecar/assets/mjpeg-placeholder.jpg",
+    "/opt/src/inference-sidecar/assets/mjpeg-placeholder.jpg"
+  };
+
+  for (const auto & candidate : candidates) {
+    std::ifstream file(candidate, std::ios::binary);
+    if (file.good()) {
+      return candidate;
+    }
+  }
+
+  return "";
 }
 
 std::optional<int> jsonNumberToInt(const json & value) {
@@ -255,6 +295,11 @@ int main() {
   const int defaultVideoHeight = getPositiveIntOrDefault("SIDECAR_DEFAULT_VIDEO_HEIGHT", 720);
   const bool emitDemoDetection = getBoolOrDefault("SIDECAR_EMIT_DEMO_DETECTIONS", false);
   const bool resetFrameCounterOnStart = getBoolOrDefault("SIDECAR_RESET_FRAME_COUNTER_ON_START", true);
+  const int mjpegIntervalMs = getPositiveIntOrDefault("MJPEG_STREAM_INTERVAL_MS", 200);
+  const std::string mjpegBoundary = getEnvOrDefault("MJPEG_BOUNDARY", "frame");
+  const std::string configuredMjpegFramePath = getEnvOrDefault("SIDECAR_MJPEG_SAMPLE_FRAME", "");
+  const std::string mjpegFramePath = resolveMjpegFramePath(configuredMjpegFramePath);
+  const std::vector<unsigned char> mjpegFrameBytes = loadBinaryFile(mjpegFramePath);
 
   RuntimeState state(defaultVideoWidth, defaultVideoHeight);
   httplib::Server server;
@@ -275,7 +320,9 @@ int main() {
       {"darknet_repo", kDarknetRepo},
       {"darknet_ref", darknetRef},
       {"darknet_commit", darknetCommit},
-      {"darkhelp_commit", darkhelpCommit}
+      {"darkhelp_commit", darkhelpCommit},
+      {"mjpeg_available", !mjpegFrameBytes.empty()},
+      {"mjpeg_frame_path", mjpegFramePath}
     };
     res.set_content(body.dump(), "application/json");
   });
@@ -334,12 +381,50 @@ int main() {
   });
 
   server.Get("/api/v1/stream/mjpeg", [&](const httplib::Request &, httplib::Response & res) {
-    json body = {
-      {"status", "not_implemented"},
-      {"message", "MJPEG stream endpoint not implemented yet."}
-    };
-    res.status = 501;
-    res.set_content(body.dump(), "application/json");
+    if (mjpegFrameBytes.empty()) {
+      json body = {
+        {"status", "not_available"},
+        {"message", "No sample MJPEG frame found for sidecar stream endpoint."}
+      };
+      res.status = 503;
+      res.set_content(body.dump(), "application/json");
+      return;
+    }
+
+    const std::string contentType = "multipart/x-mixed-replace; boundary=" + mjpegBoundary;
+    const std::string frameHeader = "--" + mjpegBoundary + "\r\n"
+      "Content-Type: image/jpeg\r\n"
+      "Content-Length: " + std::to_string(mjpegFrameBytes.size()) + "\r\n\r\n";
+    const std::string frameFooter = "\r\n";
+
+    res.set_header("Cache-Control", "no-cache");
+    res.set_header("Connection", "keep-alive");
+    res.set_chunked_content_provider(
+      contentType,
+      [&, frameHeader, frameFooter](size_t, httplib::DataSink & sink) {
+        if (!sink.is_writable()) {
+          sink.done();
+          return false;
+        }
+
+        if (!sink.write(frameHeader.data(), frameHeader.size())) {
+          return false;
+        }
+
+        if (!sink.write(reinterpret_cast<const char *>(mjpegFrameBytes.data()),
+          mjpegFrameBytes.size())) {
+          return false;
+        }
+
+        if (!sink.write(frameFooter.data(), frameFooter.size())) {
+          return false;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(mjpegIntervalMs));
+        return true;
+      },
+      [&](bool) {}
+    );
   });
 
   const int port = getPort();

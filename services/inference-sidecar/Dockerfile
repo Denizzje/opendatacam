@@ -39,6 +39,8 @@ RUN cmake --build /opt/src/darkhelp/build --target package
 RUN cd /opt/src/darkhelp/build && dpkg -i darkhelp-*.deb
 
 COPY services/inference-sidecar /opt/src/inference-sidecar
+RUN mkdir -p /opt/src/inference-sidecar/assets
+COPY public/static/placeholder/frames/001.jpg /opt/src/inference-sidecar/assets/mjpeg-placeholder.jpg
 RUN cmake -S /opt/src/inference-sidecar -B /opt/src/inference-sidecar/build -DCMAKE_BUILD_TYPE=Release
 RUN cmake --build /opt/src/inference-sidecar/build -j
 
