@@ -11,8 +11,8 @@ Implemented endpoints:
 - `POST /api/v1/runtime/session/start`
 - `POST /api/v1/runtime/session/stop`
 - `GET /api/v1/runtime/session/status`
-- `GET /api/v1/stream/detections` (continuous SSE payload stream)
-- `GET /api/v1/stream/mjpeg` (continuous MJPEG stream using configured sample frame)
+- `GET /api/v1/stream/detections` (continuous SSE payload stream, can replay frame-by-frame detections from JSON)
+- `GET /api/v1/stream/mjpeg` (continuous MJPEG stream, can replay JPEG sequence from folder)
 
 ## Build locally
 
@@ -34,6 +34,9 @@ cmake --build services/inference-sidecar/build -j
 - `SIDECAR_DEFAULT_VIDEO_HEIGHT` (default: `720`)
 - `SIDECAR_EMIT_DEMO_DETECTIONS` (default: `false`)
 - `SIDECAR_RESET_FRAME_COUNTER_ON_START` (default: `true`)
+- `SIDECAR_REPLAY_LOOP` (default: `true`)
+- `SIDECAR_REPLAY_FRAMES_DIR` (optional directory with `.jpg`/`.jpeg` frames)
+- `SIDECAR_REPLAY_DETECTIONS_JSON` (optional JSON array of frame detections)
 - `MJPEG_STREAM_INTERVAL_MS` (default: `200`)
 - `MJPEG_BOUNDARY` (default: `frame`)
 - `SIDECAR_MJPEG_SAMPLE_FRAME` (optional absolute/relative path to JPEG frame)

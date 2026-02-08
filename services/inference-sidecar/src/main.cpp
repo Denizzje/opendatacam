@@ -1,6 +1,9 @@
 #include <atomic>
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <mutex>
@@ -15,6 +18,7 @@
 namespace {
 
 using json = nlohmann::json;
+namespace fs = std::filesystem;
 
 const char * kDarknetRepo = "https://codeberg.org/CCodeRun/darknet";
 
@@ -89,25 +93,121 @@ std::vector<unsigned char> loadBinaryFile(const std::string & path) {
   return content;
 }
 
-std::string resolveMjpegFramePath(const std::string & configuredPath) {
-  if (!configuredPath.empty()) {
-    return configuredPath;
+std::vector<std::string> listImagePathsSorted(const std::string & directoryPath) {
+  std::vector<std::string> paths;
+  if (directoryPath.empty()) {
+    return paths;
   }
 
-  const std::vector<std::string> candidates = {
-    "public/static/placeholder/frames/001.jpg",
-    "services/inference-sidecar/assets/mjpeg-placeholder.jpg",
-    "/opt/src/inference-sidecar/assets/mjpeg-placeholder.jpg"
-  };
+  try {
+    if (!fs::exists(directoryPath) || !fs::is_directory(directoryPath)) {
+      return paths;
+    }
+
+    for (const auto & entry : fs::directory_iterator(directoryPath)) {
+      if (!entry.is_regular_file()) {
+        continue;
+      }
+
+      std::string extension = entry.path().extension().string();
+      std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char value) {
+        return static_cast<char>(std::tolower(value));
+      });
+      if (extension == ".jpg" || extension == ".jpeg") {
+        paths.push_back(entry.path().string());
+      }
+    }
+
+    std::sort(paths.begin(), paths.end());
+  } catch (const std::exception &) {
+    return {};
+  }
+
+  return paths;
+}
+
+std::vector<std::vector<unsigned char>> loadFramesFromPaths(const std::vector<std::string> & paths) {
+  std::vector<std::vector<unsigned char>> frames;
+  frames.reserve(paths.size());
+
+  for (const auto & path : paths) {
+    const auto frameBytes = loadBinaryFile(path);
+    if (!frameBytes.empty()) {
+      frames.push_back(frameBytes);
+    }
+  }
+
+  return frames;
+}
+
+std::vector<json> loadDetectionsReplay(const std::string & path) {
+  std::vector<json> replay;
+  if (path.empty()) {
+    return replay;
+  }
+
+  std::ifstream file(path);
+  if (!file) {
+    return replay;
+  }
+
+  try {
+    json parsed = json::parse(file);
+    if (!parsed.is_array()) {
+      return replay;
+    }
+
+    replay.reserve(parsed.size());
+    for (const auto & frame : parsed) {
+      if (frame.is_object() && frame.contains("objects") && frame["objects"].is_array()) {
+        replay.push_back(frame);
+      }
+    }
+  } catch (const std::exception &) {
+    return {};
+  }
+
+  return replay;
+}
+
+std::string resolveExistingPath(
+  const std::string & configuredPath,
+  const std::vector<std::string> & candidates,
+  bool mustBeDirectory
+) {
+  if (!configuredPath.empty()) {
+    try {
+      if (fs::exists(configuredPath)
+        && ((mustBeDirectory && fs::is_directory(configuredPath))
+          || (!mustBeDirectory && fs::is_regular_file(configuredPath)))) {
+        return configuredPath;
+      }
+    } catch (const std::exception &) {
+      return "";
+    }
+  }
 
   for (const auto & candidate : candidates) {
-    std::ifstream file(candidate, std::ios::binary);
-    if (file.good()) {
-      return candidate;
+    try {
+      if (fs::exists(candidate)
+        && ((mustBeDirectory && fs::is_directory(candidate))
+          || (!mustBeDirectory && fs::is_regular_file(candidate)))) {
+        return candidate;
+      }
+    } catch (const std::exception &) {
+      continue;
     }
   }
 
   return "";
+}
+
+std::string resolveMjpegFramePath(const std::string & configuredPath) {
+  return resolveExistingPath(configuredPath, {
+    "public/static/placeholder/frames/001.jpg",
+    "services/inference-sidecar/assets/mjpeg-placeholder.jpg",
+    "/opt/src/inference-sidecar/assets/mjpeg-placeholder.jpg",
+  }, false);
 }
 
 std::optional<int> jsonNumberToInt(const json & value) {
@@ -297,9 +397,36 @@ int main() {
   const bool resetFrameCounterOnStart = getBoolOrDefault("SIDECAR_RESET_FRAME_COUNTER_ON_START", true);
   const int mjpegIntervalMs = getPositiveIntOrDefault("MJPEG_STREAM_INTERVAL_MS", 200);
   const std::string mjpegBoundary = getEnvOrDefault("MJPEG_BOUNDARY", "frame");
+  const bool replayLoop = getBoolOrDefault("SIDECAR_REPLAY_LOOP", true);
+  const std::string configuredReplayFramesDir = getEnvOrDefault("SIDECAR_REPLAY_FRAMES_DIR", "");
+  const std::string replayFramesDir = resolveExistingPath(
+    configuredReplayFramesDir,
+    {
+      "public/static/placeholder/frames",
+      "services/inference-sidecar/assets/frames",
+      "/opt/src/inference-sidecar/assets/frames",
+    },
+    true
+  );
+  const std::vector<std::string> replayFramePaths = listImagePathsSorted(replayFramesDir);
+  const std::vector<std::vector<unsigned char>> replayFrameBytes = loadFramesFromPaths(replayFramePaths);
+
+  const std::string configuredReplayDetectionsPath = getEnvOrDefault("SIDECAR_REPLAY_DETECTIONS_JSON", "");
+  const std::string replayDetectionsPath = resolveExistingPath(
+    configuredReplayDetectionsPath,
+    {
+      "public/static/placeholder/alexeydetections30FPS.json",
+      "services/inference-sidecar/assets/alexeydetections30FPS.json",
+      "/opt/src/inference-sidecar/assets/alexeydetections30FPS.json",
+    },
+    false
+  );
+  const std::vector<json> replayDetections = loadDetectionsReplay(replayDetectionsPath);
+
   const std::string configuredMjpegFramePath = getEnvOrDefault("SIDECAR_MJPEG_SAMPLE_FRAME", "");
   const std::string mjpegFramePath = resolveMjpegFramePath(configuredMjpegFramePath);
   const std::vector<unsigned char> mjpegFrameBytes = loadBinaryFile(mjpegFramePath);
+  const bool hasMjpegFrames = !replayFrameBytes.empty() || !mjpegFrameBytes.empty();
 
   RuntimeState state(defaultVideoWidth, defaultVideoHeight);
   httplib::Server server;
@@ -321,8 +448,12 @@ int main() {
       {"darknet_ref", darknetRef},
       {"darknet_commit", darknetCommit},
       {"darkhelp_commit", darkhelpCommit},
-      {"mjpeg_available", !mjpegFrameBytes.empty()},
-      {"mjpeg_frame_path", mjpegFramePath}
+      {"mjpeg_available", hasMjpegFrames},
+      {"mjpeg_frame_path", mjpegFramePath},
+      {"replay_frames_dir", replayFramesDir},
+      {"replay_frames_count", replayFramePaths.size()},
+      {"replay_detections_path", replayDetectionsPath},
+      {"replay_detections_count", replayDetections.size()}
     };
     res.set_content(body.dump(), "application/json");
   });
@@ -361,13 +492,34 @@ int main() {
     res.set_header("Connection", "keep-alive");
     res.set_chunked_content_provider(
       "text/event-stream",
-      [&](size_t, httplib::DataSink & sink) {
+      [&, detectionCursor = static_cast<size_t>(0)](size_t, httplib::DataSink & sink) mutable {
         if (!sink.is_writable()) {
           sink.done();
           return false;
         }
 
-        const json detection = state.nextDetection(emitDemoDetection);
+        json detection = state.nextDetection(emitDemoDetection && replayDetections.empty());
+        const bool sessionStarted = detection.contains("session_started")
+          && detection["session_started"].is_boolean()
+          && detection["session_started"].get<bool>();
+
+        if (sessionStarted && !replayDetections.empty()) {
+          if (detectionCursor >= replayDetections.size()) {
+            detectionCursor = replayLoop ? 0 : replayDetections.size() - 1;
+          }
+
+          const auto & replayFrame = replayDetections[detectionCursor];
+          detection["objects"] = replayFrame["objects"];
+          detection["source"] = "inference-sidecar-replay";
+          if (replayFrame.contains("frame_id")) {
+            detection["replay_frame_id"] = replayFrame["frame_id"];
+          }
+
+          if (replayLoop || (detectionCursor + 1 < replayDetections.size())) {
+            detectionCursor += 1;
+          }
+        }
+
         const std::string payload = "event: detections\ndata: " + detection.dump() + "\n\n";
         if (!sink.write(payload.data(), payload.size())) {
           return false;
@@ -381,7 +533,7 @@ int main() {
   });
 
   server.Get("/api/v1/stream/mjpeg", [&](const httplib::Request &, httplib::Response & res) {
-    if (mjpegFrameBytes.empty()) {
+    if (!hasMjpegFrames) {
       json body = {
         {"status", "not_available"},
         {"message", "No sample MJPEG frame found for sidecar stream endpoint."}
@@ -392,27 +544,41 @@ int main() {
     }
 
     const std::string contentType = "multipart/x-mixed-replace; boundary=" + mjpegBoundary;
-    const std::string frameHeader = "--" + mjpegBoundary + "\r\n"
-      "Content-Type: image/jpeg\r\n"
-      "Content-Length: " + std::to_string(mjpegFrameBytes.size()) + "\r\n\r\n";
     const std::string frameFooter = "\r\n";
 
     res.set_header("Cache-Control", "no-cache");
     res.set_header("Connection", "keep-alive");
     res.set_chunked_content_provider(
       contentType,
-      [&, frameHeader, frameFooter](size_t, httplib::DataSink & sink) {
+      [&, frameFooter, frameCursor = static_cast<size_t>(0)](size_t, httplib::DataSink & sink) mutable {
         if (!sink.is_writable()) {
           sink.done();
           return false;
         }
 
+        const std::vector<unsigned char> * frameBytes = nullptr;
+        if (!replayFrameBytes.empty()) {
+          if (frameCursor >= replayFrameBytes.size()) {
+            frameCursor = replayLoop ? 0 : replayFrameBytes.size() - 1;
+          }
+
+          frameBytes = &replayFrameBytes[frameCursor];
+          if (replayLoop || (frameCursor + 1 < replayFrameBytes.size())) {
+            frameCursor += 1;
+          }
+        } else {
+          frameBytes = &mjpegFrameBytes;
+        }
+
+        const std::string frameHeader = "--" + mjpegBoundary + "\r\n"
+          "Content-Type: image/jpeg\r\n"
+          "Content-Length: " + std::to_string(frameBytes->size()) + "\r\n\r\n";
+
         if (!sink.write(frameHeader.data(), frameHeader.size())) {
           return false;
         }
 
-        if (!sink.write(reinterpret_cast<const char *>(mjpegFrameBytes.data()),
-          mjpegFrameBytes.size())) {
+        if (!sink.write(reinterpret_cast<const char *>(frameBytes->data()), frameBytes->size())) {
           return false;
         }
 
