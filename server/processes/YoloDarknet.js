@@ -89,7 +89,7 @@ class YoloDarknet extends EventEmitter {
       const stdoutText = data.toString();
       // Hacky way to get the video resolution from YOLO
       // We parse the stdout looking for "Video stream: 640 x 480"
-      // alternative would be to add this info to the JSON stream sent by YOLO, would need to send a PR to https://github.com/alexeyab/darknet
+      // alternative would be to add this info to the JSON stream sent by YOLO, would need to send a PR to https://codeberg.org/CCodeRun/darknet
       if (stdoutText.indexOf('Video stream:') > -1) {
         const splitOnStream = stdoutText.toString().split('stream:');
         const ratio = splitOnStream[1].split('\n')[0];

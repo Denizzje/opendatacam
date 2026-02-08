@@ -790,9 +790,29 @@ module.exports = {
   },
 
   setVideoResolution(videoResolution) {
+    if (!videoResolution
+      || !Number.isFinite(videoResolution.w)
+      || !Number.isFinite(videoResolution.h)
+      || videoResolution.w <= 0
+      || videoResolution.h <= 0) {
+      return;
+    }
+
+    const currentResolution = Opendatacam.videoResolution;
+    const hasChanged = !currentResolution
+      || currentResolution.w !== videoResolution.w
+      || currentResolution.h !== videoResolution.h;
+
+    if (!hasChanged) {
+      return;
+    }
+
     const self = this;
-    console.log('setvideoresolution');
-    Opendatacam.videoResolution = videoResolution;
+    Opendatacam.videoResolution = {
+      w: videoResolution.w,
+      h: videoResolution.h,
+    };
+
     // Restore counting areas if defined
     if (Opendatacam.database !== null) {
       Opendatacam.database.getAppSettings().then((appSettings) => {
@@ -800,6 +820,9 @@ module.exports = {
           console.log('Restore counting areas');
           self.registerCountingAreas(appSettings.countingAreas);
         }
+      }).catch((error) => {
+        console.warn('Failed to restore counting areas from database');
+        console.warn(error && error.message ? error.message : error);
       });
     }
   },

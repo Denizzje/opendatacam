@@ -116,4 +116,22 @@ describe('Opendatacam', () => {
       });
     });
   });
+
+  describe('video resolution updates', () => {
+    it('does not query app settings again when resolution did not change', () => {
+      dbSpy.getAppSettings.calls.reset();
+
+      Opendatacam.setVideoResolution({ w: 1280, h: 720 });
+
+      expect(dbSpy.getAppSettings).not.toHaveBeenCalled();
+    });
+
+    it('does not throw when restoring app settings fails', () => {
+      dbSpy.getAppSettings.and.rejectWith(new Error('Not connected'));
+
+      expect(() => {
+        Opendatacam.setVideoResolution({ w: 640, h: 480 });
+      }).not.toThrow();
+    });
+  });
 });

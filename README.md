@@ -144,6 +144,7 @@ The `development` branch now contains the first modernization scaffolding:
 - Set `OPENDATACAM_V2_USE_SIDECAR_DETECTIONS=true` to use sidecar detections as runtime source for `/api/v2/runtime/session/*`
 - In sidecar mode, `/` now auto-starts sidecar runtime session (not legacy YOLO). Disable this with `OPENDATACAM_V2_AUTO_START_ON_ROOT=false`
 - Frontend controls and streams now use `/api/v2/*` routes (recordings, counting areas, UI settings, SSE, MJPEG, uploads)
+- Video resolution updates are now idempotent and database restore errors during sidecar startup are handled without unhandled promise noise
 - In sidecar detections mode, startup falls back to legacy runtime if sidecar session start fails
 - `/api/v2/stream/mjpeg` defaults to legacy stream for compatibility. Set `OPENDATACAM_V2_MJPEG_FALLBACK_LEGACY=false` to force sidecar MJPEG (`/api/v1/stream/mjpeg`)
 - Sidecar runtime in `services/inference-sidecar/` now supports DarkHelp live inference with replay fallback for detections + MJPEG streams

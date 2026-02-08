@@ -25,7 +25,7 @@ RUN apt-get update \
 WORKDIR /var/local/darknet
 
 # COPY weights, get them localy in the Dockerfile folder previously as they are slow to download each time
-# Links: https://github.com/AlexeyAB/darknet#pre-trained-models
+# Links: https://codeberg.org/CCodeRun/darknet#pre-trained-models
 COPY yolov4-tiny.weights yolov4-tiny.weights
 
 # Include demo.mp4 file
